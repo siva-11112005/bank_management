@@ -1,0 +1,167 @@
+.transaction-security-container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.4rem 1rem 2rem;
+}
+
+.transaction-security-head h1 {
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  letter-spacing: -0.3px;
+}
+
+.transaction-security-head p {
+  margin-top: 0.36rem;
+  color: var(--ink-700);
+}
+
+.transaction-security-message {
+  margin-top: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 0.7rem 0.88rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.transaction-security-message.success {
+  color: #176b36;
+  background: #e9f8ee;
+  border-color: #bde5c9;
+}
+
+.transaction-security-message.error {
+  color: #9c1e32;
+  background: #fdecef;
+  border-color: #f4c6cf;
+}
+
+.transaction-security-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.transaction-security-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  padding: 1rem;
+}
+
+.transaction-security-card h2 {
+  font-size: 1rem;
+}
+
+.transaction-security-status {
+  margin-top: 0.6rem;
+}
+
+.security-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  min-height: 1.56rem;
+  padding: 0 0.68rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.52px;
+}
+
+.security-status-pill.active {
+  background: #e8f6ee;
+  color: #196b39;
+}
+
+.security-status-pill.inactive {
+  background: #fdecef;
+  color: #9c1e32;
+}
+
+.transaction-security-status p {
+  margin-top: 0.3rem;
+  color: var(--ink-700);
+  font-size: 0.84rem;
+}
+
+.transaction-security-points {
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transaction-security-points li {
+  color: var(--ink-700);
+  font-size: 0.83rem;
+  margin-top: 0.38rem;
+  position: relative;
+  padding-left: 0.68rem;
+}
+
+.transaction-security-points li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--hdfc-blue);
+  position: absolute;
+  left: 0;
+  top: 0.56rem;
+}
+
+.transaction-security-form {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.transaction-security-form .form-group label {
+  display: block;
+  margin-bottom: 0.34rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.56px;
+  color: var(--ink-700);
+}
+
+.transaction-security-form .form-group input {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.73rem 0.84rem;
+  font-size: 0.91rem;
+}
+
+.transaction-security-form .form-group input:focus {
+  outline: none;
+  border-color: var(--hdfc-blue);
+  box-shadow: 0 0 0 4px rgba(0, 75, 141, 0.12);
+}
+
+.transaction-security-btn {
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.25px;
+  padding: 0.72rem 0.92rem;
+  background: linear-gradient(135deg, var(--hdfc-blue) 0%, #0f6ebf 100%);
+  cursor: pointer;
+}
+
+.transaction-security-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@media (max-width: 860px) {
+  .transaction-security-grid {
+    grid-template-columns: 1fr;
+  }
+}

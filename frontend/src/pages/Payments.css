@@ -1,0 +1,245 @@
+.payments-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.35rem 1rem 2rem;
+}
+
+.payments-head h1 {
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  letter-spacing: -0.3px;
+}
+
+.payments-head p {
+  margin-top: 0.42rem;
+  color: var(--ink-700);
+}
+
+.payment-alert {
+  margin-top: 0.85rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 0.66rem 0.82rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.payment-alert.success {
+  color: #176b36;
+  background: #e9f8ee;
+  border-color: #bde5c9;
+}
+
+.payment-alert.error {
+  color: #9c1e32;
+  background: #fdecef;
+  border-color: #f4c6cf;
+}
+
+.payment-summary-grid {
+  margin-top: 0.95rem;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.payment-summary-card {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+  padding: 0.86rem;
+}
+
+.payment-summary-card h3 {
+  font-size: 0.76rem;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.72px;
+}
+
+.payment-summary-card p {
+  margin-top: 0.22rem;
+  font-size: 1.18rem;
+  color: var(--hdfc-blue);
+  font-weight: 800;
+}
+
+.payment-layout {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.payment-card {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+  padding: 1rem;
+}
+
+.payment-card h2 {
+  font-size: 1rem;
+  color: var(--ink-900);
+  margin-bottom: 0.65rem;
+}
+
+.payment-form {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.payment-form .form-group label {
+  display: block;
+  margin-bottom: 0.32rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+  color: var(--ink-700);
+}
+
+.payment-form .form-group input,
+.payment-form .form-group select {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.72rem 0.82rem;
+  font-size: 0.9rem;
+}
+
+.payment-form .form-group input:focus,
+.payment-form .form-group select:focus {
+  outline: none;
+  border-color: var(--hdfc-blue);
+  box-shadow: 0 0 0 4px rgba(0, 75, 141, 0.12);
+}
+
+.payment-btn {
+  border: none;
+  border-radius: 12px;
+  font-size: 0.83rem;
+  font-weight: 800;
+  letter-spacing: 0.25px;
+  padding: 0.72rem 0.9rem;
+  cursor: pointer;
+}
+
+.payment-btn.primary {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--hdfc-blue) 0%, #0f6ebf 100%);
+}
+
+.payment-btn.danger {
+  color: #ffffff;
+  background: linear-gradient(135deg, #cf1732, #af132b);
+}
+
+.payment-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.order-info {
+  display: grid;
+  gap: 0.36rem;
+}
+
+.order-info p {
+  color: var(--ink-700);
+  font-size: 0.84rem;
+}
+
+.payment-inline-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.empty-copy {
+  color: var(--ink-500);
+  font-size: 0.86rem;
+}
+
+.payment-history {
+  margin-top: 0.9rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.payment-history table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.payment-history th {
+  background: #edf3fd;
+  color: var(--ink-700);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.6rem;
+  text-align: left;
+}
+
+.payment-history td {
+  padding: 0.58rem;
+  border-bottom: 1px solid #edf3fb;
+  color: var(--ink-700);
+  font-size: 0.83rem;
+}
+
+.mono {
+  font-family: "Courier New", monospace;
+}
+
+.payment-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.2rem 0.54rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.48px;
+  text-transform: uppercase;
+}
+
+.payment-status.created,
+.payment-status.pending {
+  background: #f2f5fa;
+  color: #5d718f;
+}
+
+.payment-status.success {
+  background: #e8f6ee;
+  color: #196b39;
+}
+
+.payment-status.failed,
+.payment-status.cancelled {
+  background: #fdecef;
+  color: #9c1e32;
+}
+
+.payment-status.refunded {
+  background: #edf4ff;
+  color: #1c4f90;
+}
+
+@media (max-width: 980px) {
+  .payment-summary-grid,
+  .payment-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .payment-inline-actions {
+    flex-direction: column;
+  }
+}

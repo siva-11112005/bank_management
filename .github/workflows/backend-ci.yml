@@ -1,0 +1,38 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Verify build
+        working-directory: backend
+        run: node -e "require('fs').accessSync('server.js')"
+
+      - name: Docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: backend:ci

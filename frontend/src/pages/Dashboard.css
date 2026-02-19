@@ -1,0 +1,570 @@
+.dashboard-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.4rem 1rem 2.1rem;
+}
+
+.dashboard-header {
+  margin-bottom: 1.2rem;
+}
+
+.dashboard-header-copy {
+  background:
+    linear-gradient(140deg, rgba(0, 75, 141, 0.95) 0%, rgba(0, 54, 103, 0.96) 74%),
+    radial-gradient(circle at 90% 10%, rgba(227, 24, 55, 0.35), transparent 34%);
+  border-radius: var(--radius-lg);
+  border: 1px solid #0f4d86;
+  color: #ffffff;
+  padding: 1.6rem 1.4rem;
+  box-shadow: var(--shadow-card);
+}
+
+.section-tag {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  background: rgba(255, 255, 255, 0.16);
+  padding: 0.26rem 0.64rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+.dashboard-header h1 {
+  margin-top: 0.72rem;
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  letter-spacing: -0.35px;
+}
+
+.dashboard-header p {
+  margin-top: 0.55rem;
+  color: rgba(255, 255, 255, 0.86);
+  max-width: 60ch;
+}
+
+.message-box {
+  margin-bottom: 1.1rem;
+  border: 1px solid #badcc7;
+  background: var(--success-100);
+  color: var(--success-700);
+  border-radius: 12px;
+  padding: 0.68rem 0.86rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 1.2rem;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.card-header h2 {
+  font-size: 1.08rem;
+  letter-spacing: -0.2px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  min-height: 1.56rem;
+  padding: 0 0.62rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.status.active {
+  background: var(--success-100);
+  color: var(--success-700);
+}
+
+.status.inactive,
+.status.closed {
+  background: var(--danger-100);
+  color: var(--danger-700);
+}
+
+.status.frozen {
+  background: #edf4ff;
+  color: #1c4f90;
+}
+
+.account-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.account-info {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.95rem;
+}
+
+.info-item {
+  min-width: 0;
+}
+
+.info-item label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 0.3rem;
+}
+
+.info-item p {
+  font-size: 0.96rem;
+  color: var(--ink-900);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.account-number {
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.9px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.balance-card {
+  background:
+    radial-gradient(circle at 90% 20%, rgba(255, 255, 255, 0.13), transparent 34%),
+    linear-gradient(140deg, var(--hdfc-blue) 0%, var(--hdfc-blue-deep) 100%);
+  border-color: #0f4d86;
+  color: #ffffff;
+}
+
+.statement-card h2 {
+  font-size: 0.98rem;
+  letter-spacing: -0.2px;
+}
+
+.statement-card p {
+  margin-top: 0.25rem;
+  color: var(--ink-700);
+  font-size: 0.82rem;
+}
+
+.statement-inputs {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.statement-inputs input {
+  border: 1px solid #c8d6ea;
+  border-radius: 12px;
+  padding: 0.7rem 0.86rem;
+  font-size: 0.9rem;
+}
+
+.statement-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.emi-card h2 {
+  font-size: 0.98rem;
+  letter-spacing: -0.2px;
+}
+
+.emi-card p {
+  margin-top: 0.25rem;
+  color: var(--ink-700);
+  font-size: 0.82rem;
+}
+
+.emi-card-inputs {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.emi-card-inputs label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.emi-card-inputs input {
+  border: 1px solid #c8d6ea;
+  border-radius: 12px;
+  padding: 0.68rem 0.82rem;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+.emi-card-inputs input:focus {
+  outline: none;
+  border-color: var(--hdfc-blue);
+  box-shadow: 0 0 0 4px rgba(0, 75, 141, 0.12);
+}
+
+.emi-card-result {
+  margin-top: 0.66rem;
+  border: 1px solid #d6e2f1;
+  border-radius: 12px;
+  background: #f7fbff;
+  padding: 0.62rem 0.72rem;
+}
+
+.emi-card-result small {
+  display: block;
+  font-size: 0.72rem;
+  color: #5f7695;
+  text-transform: uppercase;
+  letter-spacing: 0.55px;
+}
+
+.emi-card-result strong {
+  display: block;
+  margin-top: 0.16rem;
+  font-size: 1.08rem;
+  color: var(--hdfc-blue);
+}
+
+.emi-card-result span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: #506c8d;
+}
+
+@media (max-width: 1200px) {
+  .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.balance-card h2 {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.balance-display {
+  margin: 0.4rem 0 1rem;
+}
+
+.balance-amount {
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  letter-spacing: -0.5px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.transaction-buttons {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.dashboard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.77rem;
+  font-weight: 800;
+  letter-spacing: 0.62px;
+  text-transform: uppercase;
+  color: var(--ink-700);
+  margin-bottom: 0.32rem;
+}
+
+.withdraw-limit-note {
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4f6c8d;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 12px;
+  padding: 0.74rem 0.86rem;
+  font-size: 0.92rem;
+  color: var(--ink-900);
+  background: #ffffff;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--hdfc-blue);
+  box-shadow: 0 0 0 4px rgba(0, 75, 141, 0.12);
+}
+
+.form-buttons {
+  display: flex;
+  gap: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+.transaction-pin-hint {
+  border: 1px solid #f1d8a0;
+  border-radius: 10px;
+  background: #fff9e9;
+  color: #7c5a12;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.52rem 0.62rem;
+}
+
+.transaction-pin-hint a {
+  color: #1f4f88;
+  text-decoration: none;
+  margin-left: 0.24rem;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-cancel {
+  border: none;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  padding: 0.74rem 0.96rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.btn-primary {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--hdfc-blue) 0%, #0f6ebf 100%);
+  box-shadow: 0 10px 20px rgba(0, 75, 141, 0.24);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  flex: 1;
+  color: var(--hdfc-blue);
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+.btn-secondary:hover {
+  background: #edf3fd;
+}
+
+.btn-cancel {
+  color: var(--ink-700);
+  background: #eff3f9;
+}
+
+.btn-cancel:hover {
+  background: #e2eaf5;
+}
+
+.transaction-form-card h3 {
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
+.quick-stats {
+  text-align: center;
+}
+
+.quick-stats h3 {
+  font-size: 0.76rem;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+
+.quick-stats p {
+  margin-top: 0.4rem;
+  font-size: 1.12rem;
+  font-weight: 800;
+}
+
+.dashboard-guidance {
+  margin-top: 1rem;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, #ffffff, #f6faff);
+  box-shadow: var(--shadow-soft);
+  padding: 1rem;
+}
+
+.dashboard-guidance-head h3 {
+  margin-top: 0.45rem;
+  font-size: 1.08rem;
+  color: var(--hdfc-blue);
+}
+
+.dashboard-guidance-head p {
+  margin-top: 0.3rem;
+  color: var(--ink-700);
+}
+
+.guidance-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid #cedcf1;
+  background: #edf4ff;
+  color: var(--hdfc-blue);
+  padding: 0.2rem 0.64rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.dashboard-guidance-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.68rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.dashboard-guidance-card {
+  border: 1px solid #d2e0f2;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.8rem;
+}
+
+.dashboard-guidance-card h4 {
+  font-size: 0.9rem;
+  color: #123d72;
+}
+
+.dashboard-guidance-card p {
+  margin-top: 0.26rem;
+  font-size: 0.8rem;
+  color: #546f90;
+}
+
+.dashboard-guidance-card span {
+  margin-top: 0.28rem;
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid #d7e5f6;
+  background: #f8fbff;
+  color: #406489;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.dashboard-guidance-card a {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--hdfc-blue);
+  text-decoration: none;
+}
+
+.create-account-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.create-card-head h2 {
+  margin-top: 0.55rem;
+  font-size: 1.38rem;
+  letter-spacing: -0.3px;
+}
+
+.create-card-head p {
+  margin-top: 0.45rem;
+  color: var(--ink-700);
+}
+
+.create-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #cedcf1;
+  background: #edf4ff;
+  color: var(--hdfc-blue);
+  padding: 0.2rem 0.64rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.create-account-form {
+  margin-top: 1rem;
+}
+
+.create-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+@media (max-width: 980px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .create-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-container {
+    padding: 1.15rem 0.8rem 1.5rem;
+  }
+
+  .card {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .account-info {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-buttons,
+  .form-buttons {
+    flex-direction: column;
+  }
+}

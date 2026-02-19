@@ -1,0 +1,83 @@
+:root {
+  --hdfc-blue: #004b8d;
+  --hdfc-blue-deep: #003667;
+  --hdfc-blue-soft: #eaf2fb;
+  --hdfc-red: #e31837;
+  --hdfc-red-deep: #bd0f2a;
+  --ink-900: #10233f;
+  --ink-700: #40587b;
+  --ink-500: #667c9a;
+  --surface-0: #f4f7fc;
+  --surface-1: #ffffff;
+  --border-1: #d4dfef;
+  --success-100: #e9f8ee;
+  --success-700: #176b36;
+  --danger-100: #fdecef;
+  --danger-700: #9c1e32;
+  --shadow-soft: 0 8px 28px rgba(16, 35, 63, 0.09);
+  --shadow-card: 0 12px 30px rgba(0, 75, 141, 0.1);
+  --radius-md: 12px;
+  --radius-lg: 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  color: var(--ink-900);
+  background:
+    radial-gradient(circle at 15% 15%, rgba(0, 75, 141, 0.09), transparent 38%),
+    linear-gradient(160deg, #f9fbff 0%, #eef3f9 100%);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e4ebf6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #9db2ce;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7d97bc;
+}
+

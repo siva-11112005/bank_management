@@ -1,0 +1,247 @@
+.cards-page {
+  min-height: calc(100vh - 84px);
+  padding: 1rem 0 1.8rem;
+}
+
+.cards-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cards-header {
+  border: 1px solid #d4e0f1;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(16, 46, 86, 0.08);
+  padding: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cards-header h1 {
+  color: #12386f;
+  font-size: clamp(1.2rem, 2.5vw, 1.9rem);
+}
+
+.cards-header p {
+  margin-top: 0.24rem;
+  color: #557093;
+  font-size: 0.84rem;
+}
+
+.cards-link-btn {
+  border: 1px solid #0f4b98;
+  border-radius: 12px;
+  color: #0f4b98;
+  background: #ffffff;
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.5rem 0.8rem;
+}
+
+.cards-panel {
+  border: 1px solid #d4e0f1;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(16, 46, 86, 0.08);
+  padding: 0.95rem;
+}
+
+.cards-panel h3 {
+  color: #153d70;
+  font-size: 1rem;
+}
+
+.cards-empty-copy {
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: #557093;
+}
+
+.cards-message {
+  border-radius: 12px;
+  font-size: 0.83rem;
+  font-weight: 700;
+  padding: 0.62rem 0.74rem;
+}
+
+.cards-message.success {
+  border: 1px solid #b9d8c4;
+  background: #e9f8ee;
+  color: #176b36;
+}
+
+.cards-message.error {
+  border: 1px solid #f4c6cf;
+  background: #fdecef;
+  color: #9c1e32;
+}
+
+.cards-apply-form {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.cards-apply-form select,
+.cards-apply-form input,
+.cards-apply-form button {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.82rem;
+}
+
+.cards-apply-form button {
+  border-color: #0f4b98;
+  background: #0f4b98;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cards-grid {
+  margin-top: 0.7rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.card-item {
+  border: 1px solid #d2dff1;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.card-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.card-item h4 {
+  font-size: 0.9rem;
+}
+
+.card-item p {
+  font-size: 0.77rem;
+  color: #557093;
+}
+
+.card-status,
+.request-status {
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.card-status.active,
+.request-status.completed {
+  background: #e9f8ee;
+  color: #176b36;
+}
+
+.card-status.blocked,
+.request-status.pending {
+  background: #fff6e2;
+  color: #8f6a1d;
+}
+
+.card-status.closed,
+.request-status.rejected {
+  background: #fdecef;
+  color: #9c1e32;
+}
+
+.card-action-form {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.card-action-form input,
+.card-action-form button {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.52rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+.card-action-form button {
+  color: #0f4b98;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.card-action-row {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.card-limit-row {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.cards-table-wrap {
+  margin-top: 0.7rem;
+  overflow-x: auto;
+}
+
+.cards-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cards-table th,
+.cards-table td {
+  border: 1px solid #dbe5f3;
+  padding: 0.54rem 0.58rem;
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.cards-table th {
+  background: #f4f8ff;
+  color: #355982;
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .cards-apply-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .card-action-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .cards-apply-form {
+    grid-template-columns: 1fr;
+  }
+
+  .card-limit-row {
+    grid-template-columns: 1fr;
+  }
+}
