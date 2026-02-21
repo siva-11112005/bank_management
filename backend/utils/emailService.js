@@ -390,6 +390,50 @@ const sendApprovalDecisionEmail = async ({
   });
 };
 
+const sendRegulatoryBreachAlertEmail = async ({
+  email,
+  userName,
+  indicatorCode,
+  indicatorMessage,
+  rangeFrom,
+  rangeTo,
+  source = "SCHEDULER_MONITOR",
+}) => {
+  const safeCode = String(indicatorCode || "REGULATORY_ALERT").toUpperCase();
+  const safeMessage = String(indicatorMessage || "Regulatory threshold attention required.").trim();
+  const fromText = rangeFrom ? new Date(rangeFrom).toLocaleString("en-IN") : "--";
+  const toText = rangeTo ? new Date(rangeTo).toLocaleString("en-IN") : "--";
+  const safeSource = String(source || "SCHEDULER_MONITOR").toUpperCase();
+
+  const subject = `BankIndia Regulatory Alert: ${safeCode}`;
+  const html = `
+    <html>
+      <body style="font-family: Arial, sans-serif;">
+        <div style="max-width:600px;margin:0 auto;padding:20px;">
+          <div style="background:linear-gradient(135deg,#b91c1c,#7c2d12);color:#fff;padding:16px;border-radius:8px;text-align:center;">
+            <h2>Regulatory Monitor Alert</h2>
+          </div>
+          <p>Hi ${userName || "Admin"},</p>
+          <p>A regulatory monitoring indicator requires attention.</p>
+          <ul>
+            <li><strong>Indicator:</strong> ${safeCode}</li>
+            <li><strong>Details:</strong> ${safeMessage}</li>
+            <li><strong>Report Range:</strong> ${fromText} to ${toText}</li>
+            <li><strong>Source:</strong> ${safeSource}</li>
+          </ul>
+          <p>Please review the Core Banking Regulatory dashboard and take action.</p>
+          <p style="color:#666;font-size:12px;">Copyright 2026 BankEase</p>
+        </div>
+      </body>
+    </html>`;
+
+  return sendMail({
+    to: email,
+    subject,
+    html,
+  });
+};
+
 module.exports = {
   isEmailConfigured,
   testEmailTransport,
@@ -400,4 +444,5 @@ module.exports = {
   sendWelcomeEmail,
   sendOtpEmail,
   sendApprovalDecisionEmail,
+  sendRegulatoryBreachAlertEmail,
 };

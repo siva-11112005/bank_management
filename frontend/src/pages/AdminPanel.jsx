@@ -14,6 +14,12 @@ import {
   rejectAdminApprovalRequest,
   escalateAdminApprovalRequest,
   escalateOverdueAdminApprovalRequests,
+  getMoneyOutPolicyConfig,
+  getMoneyOutPolicyHistory,
+  requestMoneyOutPolicyUpdate,
+  getRegulatoryPolicyConfig,
+  getRegulatoryPolicyHistory,
+  requestRegulatoryPolicyUpdate,
   activateUser,
   unblockUserTransactions,
   deactivateUser,
@@ -46,6 +52,18 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import "./AdminPanel.css";
+
+const loanStatusOptionsByCurrent = {
+  PENDING: ["PENDING", "APPROVED", "REJECTED"],
+  APPROVED: ["APPROVED", "CLOSED"],
+  REJECTED: ["REJECTED", "APPROVED"],
+  CLOSED: ["CLOSED"],
+};
+
+const getLoanStatusOptions = (status = "") => {
+  const normalized = String(status || "").trim().toUpperCase();
+  return loanStatusOptionsByCurrent[normalized] || [normalized || "PENDING"];
+};
 
 const AdminPanel = () => {
   const { user } = useAuth();
@@ -86,6 +104,39 @@ const AdminPanel = () => {
     actionType: "",
     overdueOnly: false,
     escalatedOnly: false,
+  });
+  const [moneyOutPolicy, setMoneyOutPolicy] = useState(null);
+  const [moneyOutPolicyMeta, setMoneyOutPolicyMeta] = useState({
+    source: "ENV_DEFAULT",
+    version: 0,
+    updatedAt: null,
+  });
+  const [moneyOutPolicyHistory, setMoneyOutPolicyHistory] = useState([]);
+  const [moneyOutPolicyForm, setMoneyOutPolicyForm] = useState({
+    maxSingleTransfer: "",
+    dailyTransferLimit: "",
+    highValueTransferThreshold: "",
+    requireTransferOtpForHighValue: false,
+    maxSingleWithdrawal: "",
+    dailyWithdrawalLimit: "",
+    enforceBeneficiary: false,
+    allowDirectTransferWithPin: true,
+    changeNote: "",
+  });
+  const [regulatoryPolicy, setRegulatoryPolicy] = useState(null);
+  const [regulatoryPolicyMeta, setRegulatoryPolicyMeta] = useState({
+    source: "ENV_DEFAULT",
+    version: 0,
+    updatedAt: null,
+  });
+  const [regulatoryPolicyHistory, setRegulatoryPolicyHistory] = useState([]);
+  const [regulatoryPolicyForm, setRegulatoryPolicyForm] = useState({
+    ctrCashThreshold: "",
+    minLcrRatio: "",
+    maxLoanToDepositRatio: "",
+    openStrAlertThreshold: "",
+    criticalStrAlertThreshold: "",
+    changeNote: "",
   });
   const [loadingApprovals, setLoadingApprovals] = useState(false);
   const [auditFilters, setAuditFilters] = useState({
@@ -272,6 +323,10 @@ const AdminPanel = () => {
         supportRes,
         cardRequestsRes,
         kycRequestsRes,
+        moneyOutPolicyRes,
+        moneyOutPolicyHistoryRes,
+        regulatoryPolicyRes,
+        regulatoryPolicyHistoryRes,
       ] =
         await Promise.all([
         getAdminStats(),
@@ -287,6 +342,10 @@ const AdminPanel = () => {
         getAllSupportTicketsAdmin(),
         getAllCardRequestsAdmin({ limit: 300 }),
         getAllKycRequestsAdmin({ limit: 300 }),
+        getMoneyOutPolicyConfig(),
+        getMoneyOutPolicyHistory({ limit: 25 }),
+        getRegulatoryPolicyConfig(),
+        getRegulatoryPolicyHistory({ limit: 25 }),
       ]);
 
       if (statsRes.data.success) setStats(statsRes.data.stats);
@@ -323,6 +382,53 @@ const AdminPanel = () => {
           pendingOverdueApprovals: Number(approvalsRes.data.pendingOverdueApprovals || 0),
           pendingEscalatedApprovals: Number(approvalsRes.data.pendingEscalatedApprovals || 0),
         });
+      }
+      if (moneyOutPolicyRes.data.success) {
+        const policy = moneyOutPolicyRes.data.policy || null;
+        setMoneyOutPolicy(policy);
+        setMoneyOutPolicyMeta({
+          source: moneyOutPolicyRes.data.source || "ENV_DEFAULT",
+          version: Number(moneyOutPolicyRes.data.version || 0),
+          updatedAt: moneyOutPolicyRes.data.updatedAt || null,
+        });
+        if (policy) {
+          setMoneyOutPolicyForm((current) => ({
+            ...current,
+            maxSingleTransfer: String(policy.maxSingleTransfer ?? ""),
+            dailyTransferLimit: String(policy.dailyTransferLimit ?? ""),
+            highValueTransferThreshold: String(policy.highValueTransferThreshold ?? ""),
+            requireTransferOtpForHighValue: Boolean(policy.requireTransferOtpForHighValue),
+            maxSingleWithdrawal: String(policy.maxSingleWithdrawal ?? ""),
+            dailyWithdrawalLimit: String(policy.dailyWithdrawalLimit ?? ""),
+            enforceBeneficiary: Boolean(policy.enforceBeneficiary),
+            allowDirectTransferWithPin: Boolean(policy.allowDirectTransferWithPin),
+          }));
+        }
+      }
+      if (moneyOutPolicyHistoryRes.data.success) {
+        setMoneyOutPolicyHistory(moneyOutPolicyHistoryRes.data.history || []);
+      }
+      if (regulatoryPolicyRes.data.success) {
+        const policy = regulatoryPolicyRes.data.policy || null;
+        setRegulatoryPolicy(policy);
+        setRegulatoryPolicyMeta({
+          source: regulatoryPolicyRes.data.source || "ENV_DEFAULT",
+          version: Number(regulatoryPolicyRes.data.version || 0),
+          updatedAt: regulatoryPolicyRes.data.updatedAt || null,
+        });
+        if (policy) {
+          setRegulatoryPolicyForm((current) => ({
+            ...current,
+            ctrCashThreshold: String(policy.ctrCashThreshold ?? ""),
+            minLcrRatio: String(policy.minLcrRatio ?? ""),
+            maxLoanToDepositRatio: String(policy.maxLoanToDepositRatio ?? ""),
+            openStrAlertThreshold: String(policy.openStrAlertThreshold ?? ""),
+            criticalStrAlertThreshold: String(policy.criticalStrAlertThreshold ?? ""),
+          }));
+        }
+      }
+      if (regulatoryPolicyHistoryRes.data.success) {
+        setRegulatoryPolicyHistory(regulatoryPolicyHistoryRes.data.history || []);
       }
     } catch (error) {
       console.error("Failed to fetch admin data:", error);
@@ -575,6 +681,155 @@ const AdminPanel = () => {
     } catch (error) {
       setActionError(error.response?.data?.message || "Failed to escalate overdue approvals");
       await fetchApprovalRequests();
+    } finally {
+      setWorkingId("");
+    }
+  };
+
+  const handleMoneyOutPolicyFieldChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setMoneyOutPolicyForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  const handleResetMoneyOutPolicyForm = () => {
+    if (!moneyOutPolicy) return;
+    setMoneyOutPolicyForm({
+      maxSingleTransfer: String(moneyOutPolicy.maxSingleTransfer ?? ""),
+      dailyTransferLimit: String(moneyOutPolicy.dailyTransferLimit ?? ""),
+      highValueTransferThreshold: String(moneyOutPolicy.highValueTransferThreshold ?? ""),
+      requireTransferOtpForHighValue: Boolean(moneyOutPolicy.requireTransferOtpForHighValue),
+      maxSingleWithdrawal: String(moneyOutPolicy.maxSingleWithdrawal ?? ""),
+      dailyWithdrawalLimit: String(moneyOutPolicy.dailyWithdrawalLimit ?? ""),
+      enforceBeneficiary: Boolean(moneyOutPolicy.enforceBeneficiary),
+      allowDirectTransferWithPin: Boolean(moneyOutPolicy.allowDirectTransferWithPin),
+      changeNote: "",
+    });
+  };
+
+  const handleSubmitMoneyOutPolicyUpdate = async (event) => {
+    event.preventDefault();
+    setActionError("");
+    setActionMessage("");
+    setWorkingId("money-out-policy");
+
+    try {
+      const payload = {
+        maxSingleTransfer: Number(moneyOutPolicyForm.maxSingleTransfer),
+        dailyTransferLimit: Number(moneyOutPolicyForm.dailyTransferLimit),
+        highValueTransferThreshold: Number(moneyOutPolicyForm.highValueTransferThreshold),
+        requireTransferOtpForHighValue: Boolean(moneyOutPolicyForm.requireTransferOtpForHighValue),
+        maxSingleWithdrawal: Number(moneyOutPolicyForm.maxSingleWithdrawal),
+        dailyWithdrawalLimit: Number(moneyOutPolicyForm.dailyWithdrawalLimit),
+        enforceBeneficiary: Boolean(moneyOutPolicyForm.enforceBeneficiary),
+        allowDirectTransferWithPin: Boolean(moneyOutPolicyForm.allowDirectTransferWithPin),
+        changeNote: String(moneyOutPolicyForm.changeNote || "").trim(),
+      };
+
+      if (
+        !Number.isFinite(payload.maxSingleTransfer) ||
+        payload.maxSingleTransfer <= 0 ||
+        !Number.isFinite(payload.dailyTransferLimit) ||
+        payload.dailyTransferLimit <= 0 ||
+        !Number.isFinite(payload.highValueTransferThreshold) ||
+        payload.highValueTransferThreshold <= 0 ||
+        !Number.isFinite(payload.maxSingleWithdrawal) ||
+        payload.maxSingleWithdrawal <= 0 ||
+        !Number.isFinite(payload.dailyWithdrawalLimit) ||
+        payload.dailyWithdrawalLimit <= 0
+      ) {
+        setActionError("All numeric policy fields must be positive numbers.");
+        return;
+      }
+
+      const response = await requestMoneyOutPolicyUpdate(payload);
+      if (response.data.success) {
+        if (response.data.pendingApproval) {
+          setActionMessage(response.data.message || "Money-out policy update submitted for approval.");
+          await fetchApprovalRequests({ page: 1, status: "PENDING" });
+        } else {
+          setActionMessage(response.data.message || "Money-out policy updated successfully.");
+        }
+        await fetchAdminData();
+      }
+    } catch (error) {
+      setActionError(error.response?.data?.message || "Failed to submit money-out policy update");
+    } finally {
+      setWorkingId("");
+    }
+  };
+
+  const handleRegulatoryPolicyFieldChange = (event) => {
+    const { name, value } = event.target;
+    setRegulatoryPolicyForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  };
+
+  const handleResetRegulatoryPolicyForm = () => {
+    if (!regulatoryPolicy) return;
+    setRegulatoryPolicyForm({
+      ctrCashThreshold: String(regulatoryPolicy.ctrCashThreshold ?? ""),
+      minLcrRatio: String(regulatoryPolicy.minLcrRatio ?? ""),
+      maxLoanToDepositRatio: String(regulatoryPolicy.maxLoanToDepositRatio ?? ""),
+      openStrAlertThreshold: String(regulatoryPolicy.openStrAlertThreshold ?? ""),
+      criticalStrAlertThreshold: String(regulatoryPolicy.criticalStrAlertThreshold ?? ""),
+      changeNote: "",
+    });
+  };
+
+  const handleSubmitRegulatoryPolicyUpdate = async (event) => {
+    event.preventDefault();
+    setActionError("");
+    setActionMessage("");
+    setWorkingId("regulatory-policy");
+
+    try {
+      const payload = {
+        ctrCashThreshold: Number(regulatoryPolicyForm.ctrCashThreshold),
+        minLcrRatio: Number(regulatoryPolicyForm.minLcrRatio),
+        maxLoanToDepositRatio: Number(regulatoryPolicyForm.maxLoanToDepositRatio),
+        openStrAlertThreshold: Number(regulatoryPolicyForm.openStrAlertThreshold),
+        criticalStrAlertThreshold: Number(regulatoryPolicyForm.criticalStrAlertThreshold),
+        changeNote: String(regulatoryPolicyForm.changeNote || "").trim(),
+      };
+
+      if (
+        !Number.isFinite(payload.ctrCashThreshold) ||
+        payload.ctrCashThreshold <= 0 ||
+        !Number.isFinite(payload.minLcrRatio) ||
+        payload.minLcrRatio < 0 ||
+        !Number.isFinite(payload.maxLoanToDepositRatio) ||
+        payload.maxLoanToDepositRatio < 0 ||
+        !Number.isFinite(payload.openStrAlertThreshold) ||
+        payload.openStrAlertThreshold < 0 ||
+        !Number.isFinite(payload.criticalStrAlertThreshold) ||
+        payload.criticalStrAlertThreshold < 0
+      ) {
+        setActionError("All regulatory policy values must be valid non-negative numbers (CTR threshold must be positive).");
+        return;
+      }
+
+      if (payload.criticalStrAlertThreshold > payload.openStrAlertThreshold) {
+        setActionError("Critical STR threshold cannot be greater than Open STR threshold.");
+        return;
+      }
+
+      const response = await requestRegulatoryPolicyUpdate(payload);
+      if (response.data.success) {
+        if (response.data.pendingApproval) {
+          setActionMessage(response.data.message || "Regulatory policy update submitted for approval.");
+          await fetchApprovalRequests({ page: 1, status: "PENDING" });
+        } else {
+          setActionMessage(response.data.message || "Regulatory policy updated successfully.");
+        }
+        await fetchAdminData();
+      }
+    } catch (error) {
+      setActionError(error.response?.data?.message || "Failed to submit regulatory policy update");
     } finally {
       setWorkingId("");
     }
@@ -1047,6 +1302,9 @@ const AdminPanel = () => {
         <button className={`tab-btn ${activeTab === "support" ? "active" : ""}`} onClick={() => setActiveTab("support")}>
           Support ({supportTickets.length})
         </button>
+        <button className={`tab-btn ${activeTab === "policies" ? "active" : ""}`} onClick={() => setActiveTab("policies")}>
+          Policies
+        </button>
         <button className={`tab-btn ${activeTab === "approvals" ? "active" : ""}`} onClick={() => setActiveTab("approvals")}>
           Approvals ({approvalRequests.length})
         </button>
@@ -1304,6 +1562,141 @@ const AdminPanel = () => {
                 </tbody>
               </table>
             </div>
+
+            <h2 className="policy-section-title">Regulatory Monitor Policy</h2>
+            <p className="admin-table-note">
+              Configure CTR/STR/ALM supervisory thresholds used by regulatory indicators. Current source:{" "}
+              <strong>{regulatoryPolicyMeta.source}</strong>, version: <strong>{regulatoryPolicyMeta.version}</strong>, updated:{" "}
+              <strong>
+                {regulatoryPolicyMeta.updatedAt ? new Date(regulatoryPolicyMeta.updatedAt).toLocaleString("en-IN") : "--"}
+              </strong>
+              .
+            </p>
+
+            <form className="policy-form-grid" onSubmit={handleSubmitRegulatoryPolicyUpdate}>
+              <label>
+                CTR Cash Threshold
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="ctrCashThreshold"
+                  value={regulatoryPolicyForm.ctrCashThreshold}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Minimum LCR Ratio (%)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  name="minLcrRatio"
+                  value={regulatoryPolicyForm.minLcrRatio}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Maximum Loan/Deposit Ratio (%)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  name="maxLoanToDepositRatio"
+                  value={regulatoryPolicyForm.maxLoanToDepositRatio}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Open STR Alert Threshold
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="openStrAlertThreshold"
+                  value={regulatoryPolicyForm.openStrAlertThreshold}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Critical STR Alert Threshold
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="criticalStrAlertThreshold"
+                  value={regulatoryPolicyForm.criticalStrAlertThreshold}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Change Note
+                <input
+                  type="text"
+                  maxLength={240}
+                  name="changeNote"
+                  value={regulatoryPolicyForm.changeNote}
+                  onChange={handleRegulatoryPolicyFieldChange}
+                  placeholder="Reason for regulatory policy update"
+                />
+              </label>
+              <div className="policy-actions">
+                <button type="submit" className="table-action-btn success" disabled={workingId === "regulatory-policy"}>
+                  {workingId === "regulatory-policy" ? "Submitting..." : "Submit Regulatory Policy"}
+                </button>
+                <button type="button" className="table-action-btn" onClick={handleResetRegulatoryPolicyForm}>
+                  Reset
+                </button>
+              </div>
+            </form>
+
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Updated</th>
+                    <th>Source</th>
+                    <th>CTR Threshold</th>
+                    <th>LCR/LTD Limits</th>
+                    <th>STR Thresholds</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {regulatoryPolicyHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan="7">No regulatory policy history found.</td>
+                    </tr>
+                  ) : (
+                    regulatoryPolicyHistory.map((entry) => (
+                      <tr key={entry._id}>
+                        <td>
+                          <span className={`status-badge ${entry.isActive ? "active" : "pending"}`}>v{entry.version}</span>
+                        </td>
+                        <td>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString("en-IN") : "--"}</td>
+                        <td>{entry.source}</td>
+                        <td>{formatAmount(entry.ctrCashThreshold)}</td>
+                        <td>
+                          Min LCR {Number(entry.minLcrRatio || 0).toFixed(2)}% | Max LTD{" "}
+                          {Number(entry.maxLoanToDepositRatio || 0).toFixed(2)}%
+                        </td>
+                        <td>
+                          Open {Number(entry.openStrAlertThreshold || 0)} | Critical{" "}
+                          {Number(entry.criticalStrAlertThreshold || 0)}
+                        </td>
+                        <td>{entry.changeNote || "-"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -1479,10 +1872,11 @@ const AdminPanel = () => {
                             className="table-select"
                             disabled={workingId === loan._id}
                           >
-                            <option value="PENDING">PENDING</option>
-                            <option value="APPROVED">APPROVED</option>
-                            <option value="REJECTED">REJECTED</option>
-                            <option value="CLOSED">CLOSED</option>
+                            {getLoanStatusOptions(loan.status).map((statusOption) => (
+                              <option key={`${loan._id}-${statusOption}`} value={statusOption}>
+                                {statusOption}
+                              </option>
+                            ))}
                           </select>
                         </td>
                       </tr>
@@ -1918,6 +2312,171 @@ const AdminPanel = () => {
           </div>
         )}
 
+        {activeTab === "policies" && (
+          <div className="data-table-section">
+            <h2>Money-Out Policy Management</h2>
+            <p className="admin-table-note">
+              Configure transfer/withdrawal risk limits with maker-checker support. Current source:{" "}
+              <strong>{moneyOutPolicyMeta.source}</strong>, version: <strong>{moneyOutPolicyMeta.version}</strong>, updated:{" "}
+              <strong>{moneyOutPolicyMeta.updatedAt ? new Date(moneyOutPolicyMeta.updatedAt).toLocaleString("en-IN") : "--"}</strong>.
+            </p>
+
+            <form className="policy-form-grid" onSubmit={handleSubmitMoneyOutPolicyUpdate}>
+              <label>
+                Max Single Transfer
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="maxSingleTransfer"
+                  value={moneyOutPolicyForm.maxSingleTransfer}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Daily Transfer Limit
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="dailyTransferLimit"
+                  value={moneyOutPolicyForm.dailyTransferLimit}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                High Value Threshold
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="highValueTransferThreshold"
+                  value={moneyOutPolicyForm.highValueTransferThreshold}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Max Single Withdrawal
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="maxSingleWithdrawal"
+                  value={moneyOutPolicyForm.maxSingleWithdrawal}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Daily Withdrawal Limit
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  name="dailyWithdrawalLimit"
+                  value={moneyOutPolicyForm.dailyWithdrawalLimit}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  required
+                />
+              </label>
+              <label>
+                Change Note
+                <input
+                  type="text"
+                  maxLength={240}
+                  name="changeNote"
+                  value={moneyOutPolicyForm.changeNote}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                  placeholder="Reason for policy update"
+                />
+              </label>
+              <label className="policy-toggle">
+                <input
+                  type="checkbox"
+                  name="requireTransferOtpForHighValue"
+                  checked={Boolean(moneyOutPolicyForm.requireTransferOtpForHighValue)}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                />
+                Require OTP for high value transfer
+              </label>
+              <label className="policy-toggle">
+                <input
+                  type="checkbox"
+                  name="enforceBeneficiary"
+                  checked={Boolean(moneyOutPolicyForm.enforceBeneficiary)}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                />
+                Enforce beneficiary verification
+              </label>
+              <label className="policy-toggle">
+                <input
+                  type="checkbox"
+                  name="allowDirectTransferWithPin"
+                  checked={Boolean(moneyOutPolicyForm.allowDirectTransferWithPin)}
+                  onChange={handleMoneyOutPolicyFieldChange}
+                />
+                Allow direct transfer with PIN
+              </label>
+              <div className="policy-actions">
+                <button type="submit" className="table-action-btn success" disabled={workingId === "money-out-policy"}>
+                  {workingId === "money-out-policy" ? "Submitting..." : "Submit Policy Update"}
+                </button>
+                <button type="button" className="table-action-btn" onClick={handleResetMoneyOutPolicyForm}>
+                  Reset
+                </button>
+              </div>
+            </form>
+
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Updated</th>
+                    <th>Source</th>
+                    <th>Transfer Limits</th>
+                    <th>Withdrawal Limits</th>
+                    <th>Flags</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {moneyOutPolicyHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan="7">No policy history found.</td>
+                    </tr>
+                  ) : (
+                    moneyOutPolicyHistory.map((entry) => (
+                      <tr key={entry._id}>
+                        <td>
+                          <span className={`status-badge ${entry.isActive ? "active" : "pending"}`}>v{entry.version}</span>
+                        </td>
+                        <td>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString("en-IN") : "--"}</td>
+                        <td>{entry.source}</td>
+                        <td>
+                          Single {formatAmount(entry.maxSingleTransfer)} | Daily {formatAmount(entry.dailyTransferLimit)} | HV{" "}
+                          {formatAmount(entry.highValueTransferThreshold)}
+                        </td>
+                        <td>
+                          Single {formatAmount(entry.maxSingleWithdrawal)} | Daily {formatAmount(entry.dailyWithdrawalLimit)}
+                        </td>
+                        <td>
+                          OTP {entry.requireTransferOtpForHighValue ? "ON" : "OFF"} | Beneficiary{" "}
+                          {entry.enforceBeneficiary ? "ON" : "OFF"} | Direct PIN {entry.allowDirectTransferWithPin ? "ON" : "OFF"}
+                        </td>
+                        <td>{entry.changeNote || "-"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {activeTab === "approvals" && (
           <div className="data-table-section">
             <h2>Approval Workflow</h2>
@@ -1953,7 +2512,17 @@ const AdminPanel = () => {
                   <option value="">All Actions</option>
                   <option value="ACCOUNT_STATUS_UPDATE">ACCOUNT_STATUS_UPDATE</option>
                   <option value="LOAN_STATUS_UPDATE">LOAN_STATUS_UPDATE</option>
+                  <option value="TRANSFER_EXECUTION">TRANSFER_EXECUTION</option>
+                  <option value="SIP_PLAN_CREATION">SIP_PLAN_CREATION</option>
+                  <option value="FD_BOOKING_CREATE">FD_BOOKING_CREATE</option>
+                  <option value="RD_CREATION">RD_CREATION</option>
                   <option value="PAYMENT_REFUND">PAYMENT_REFUND</option>
+                  <option value="GL_MANUAL_JOURNAL">GL_MANUAL_JOURNAL</option>
+                  <option value="MONEY_OUT_POLICY_UPDATE">MONEY_OUT_POLICY_UPDATE</option>
+                  <option value="REGULATORY_POLICY_UPDATE">REGULATORY_POLICY_UPDATE</option>
+                  <option value="TREASURY_SNAPSHOT_CREATE">TREASURY_SNAPSHOT_CREATE</option>
+                  <option value="REGULATORY_REPORT_PUBLISH">REGULATORY_REPORT_PUBLISH</option>
+                  <option value="REGULATORY_ALERT_RESOLVE">REGULATORY_ALERT_RESOLVE</option>
                 </select>
               </div>
               <div className="audit-field approval-filter-checks">
@@ -2287,6 +2856,15 @@ function formatAuditMetadata(metadata) {
 
 function formatApprovalTarget(request) {
   if (!request) return "-";
+  if (String(request.actionType || "").toUpperCase() === "TRANSFER_EXECUTION") {
+    const transferPayload = request.payload || {};
+    const recipient = String(transferPayload.recipientAccountNumber || "").trim();
+    if (recipient) {
+      const masked =
+        recipient.length > 4 ? `${"*".repeat(Math.max(0, recipient.length - 4))}${recipient.slice(-4)}` : recipient;
+      return `TRANSFER:${masked}`;
+    }
+  }
   const type = request.targetType || "";
   const id = String(request.targetId || "");
   const shortId = id ? id.slice(-8) : "";
@@ -2295,7 +2873,37 @@ function formatApprovalTarget(request) {
 
 function formatApprovalNotes(request) {
   if (!request) return "-";
-  const notes = [request.requestNote, request.reviewNote, request.failureReason].filter(Boolean).join(" | ");
+  const notesList = [request.requestNote, request.reviewNote, request.failureReason].filter(Boolean);
+
+  if (String(request.actionType || "").toUpperCase() === "TRANSFER_EXECUTION") {
+    const transferPayload = request.payload || {};
+    const amount = Number(transferPayload.amount || 0);
+    const recipientName = String(transferPayload.recipientName || "").trim();
+    const recipient = String(transferPayload.recipientAccountNumber || "").trim();
+    const masked =
+      recipient.length > 4 ? `${"*".repeat(Math.max(0, recipient.length - 4))}${recipient.slice(-4)}` : recipient;
+    if (amount > 0 || masked || recipientName) {
+      notesList.unshift(
+        `Transfer ${`Rs ${amount.toFixed(2)}`}${recipientName ? ` to ${recipientName}` : ""}${
+          masked ? ` (${masked})` : ""
+        }`
+      );
+    }
+  }
+
+  if (String(request.actionType || "").toUpperCase() === "SIP_PLAN_CREATION") {
+    const sipPayload = request.payload || {};
+    const monthlyAmount = Number(sipPayload.monthlyContribution || 0);
+    const tenure = Number(sipPayload.tenureMonths || 0);
+    const planName = String(sipPayload.planName || "").trim();
+    if (monthlyAmount > 0 || tenure > 0 || planName) {
+      notesList.unshift(
+        `SIP ${planName || "Plan"}: Rs ${monthlyAmount.toFixed(2)} / month for ${tenure || 0} months`
+      );
+    }
+  }
+
+  const notes = notesList.join(" | ");
   if (!notes) return "-";
   return notes.length > 220 ? `${notes.slice(0, 220)}...` : notes;
 }

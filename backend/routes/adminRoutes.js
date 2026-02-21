@@ -9,6 +9,9 @@ const Payment = require("../models/Payment");
 const LedgerEntry = require("../models/LedgerEntry");
 const AuditLog = require("../models/AuditLog");
 const ApprovalRequest = require("../models/ApprovalRequest");
+const MoneyOutPolicyConfig = require("../models/MoneyOutPolicyConfig");
+const RegulatoryPolicyConfig = require("../models/RegulatoryPolicyConfig");
+const RegulatoryAlert = require("../models/RegulatoryAlert");
 const CardRequest = require("../models/CardRequest");
 const KycRequest = require("../models/KycRequest");
 const { protect } = require("../middleware/authMiddleware");
@@ -18,6 +21,7 @@ const { isAdminIdentity } = require("../utils/adminIdentity");
 const {
   getApprovalMode,
   getRequiredApprovalActions,
+  isApprovalRequired,
   isDualControlEnforced,
   isReviewNoteRequired,
   getApprovalSlaHours,
@@ -28,8 +32,34 @@ const {
   approvalDecisionSchema,
   approvalEscalationSchema,
   approvalEscalationBulkSchema,
+  moneyOutPolicyUpdateSchema,
+  regulatoryPolicyUpdateSchema,
 } = require("../validators/adminValidators");
 const { isEmailConfigured, sendApprovalDecisionEmail } = require("../utils/emailService");
+const { createNotification } = require("../utils/notificationService");
+const { postJournal } = require("../utils/coreBanking/glService");
+const {
+  createTreasurySnapshotFromPayload,
+  publishRegulatoryReportFromPayload,
+  resolveRegulatoryAlertFromPayload,
+  executeApprovedFixedDepositBooking,
+  executeApprovedRecurringDepositCreation,
+} = require("../controllers/coreBankingController");
+const { executeApprovedTransferExecution } = require("../controllers/transactionController");
+const { transitionLoanStatus } = require("../controllers/loanController");
+const { executeApprovedSipPlanCreation, executeRejectedSipPlanCreation } = require("../controllers/sipController");
+const {
+  getMoneyOutPolicyState,
+  normalizePolicyPayload,
+  applyMoneyOutPolicy,
+} = require("../utils/moneyOutPolicy");
+const {
+  getRegulatoryPolicyState,
+  normalizeRegulatoryPolicyPayload,
+  applyRegulatoryPolicy,
+} = require("../utils/regulatoryPolicy");
+
+const SYSTEM_POLICY_TARGET_ID = new mongoose.Types.ObjectId("000000000000000000000001");
 
 const parseAuditDate = (value, endOfDay = false) => {
   const raw = String(value || "").trim();
@@ -185,48 +215,28 @@ const executeLoanStatusUpdate = async ({ approvalRequest, reviewerId }) => {
   if (!allowedStatuses.includes(nextStatus)) {
     throw new Error("Invalid target loan status in approval payload.");
   }
-
-  const loan = await Loan.findById(approvalRequest.targetId);
-  if (!loan) {
-    throw new Error("Loan not found.");
-  }
-
-  const previousStatus = loan.status;
-  if (previousStatus === nextStatus) {
-    return {
-      executed: false,
-      result: { previousStatus, nextStatus, loanId: loan._id, loanType: loan.loanType, principal: loan.principal },
-      message: "Loan already in requested status.",
-    };
-  }
-
-  loan.status = nextStatus;
-  if (nextStatus === "APPROVED" && !loan.startDate) {
-    loan.startDate = new Date();
-  }
-  if (nextStatus === "CLOSED") {
-    loan.endDate = new Date();
-  }
-  loan.approvedBy = reviewerId;
-  await loan.save();
-
-  await AuditLog.create({
-    userId: reviewerId,
-    action: "ADMIN_LOAN_STATUS_UPDATED",
-    metadata: {
-      loanId: loan._id,
-      previousStatus,
-      nextStatus,
-      loanType: loan.loanType,
-      principal: loan.principal,
-      approvalRequestId: approvalRequest._id,
-    },
+  const transitionResult = await transitionLoanStatus({
+    loanId: approvalRequest.targetId,
+    nextStatus,
+    reviewerId,
+    source: "ADMIN_APPROVAL",
+    approvalRequestId: approvalRequest._id,
   });
 
   return {
-    executed: true,
-    result: { previousStatus, nextStatus, loanId: loan._id, loanType: loan.loanType, principal: loan.principal },
-    message: `Loan status updated to ${nextStatus} from approved request.`,
+    executed: Boolean(transitionResult.executed),
+    result: {
+      previousStatus: transitionResult.previousStatus,
+      nextStatus: transitionResult.nextStatus,
+      loanId: transitionResult.loan?._id,
+      loanType: transitionResult.loan?.loanType,
+      principal: transitionResult.loan?.principal,
+      disbursedNow: Boolean(transitionResult.disbursedNow),
+      disbursedAmount: Number(transitionResult.disbursedAmount || 0),
+      disbursalTransactionId: transitionResult.disbursalTransactionId || null,
+      accountBalance: transitionResult.accountBalance,
+    },
+    message: transitionResult.message || `Loan status updated to ${nextStatus} from approved request.`,
   };
 };
 
@@ -330,27 +340,359 @@ const executePaymentRefund = async ({ approvalRequest, reviewerId }) => {
   }
 };
 
-const executeApprovedAction = async ({ approvalRequest, reviewerId }) => {
+const executeGlManualJournal = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const description = String(payload.description || "Manual GL adjustment").trim();
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  const postingDate = payload.postingDate ? new Date(payload.postingDate) : new Date();
+  const referenceType = String(payload.referenceType || "GL_MANUAL_ADJUSTMENT").trim().toUpperCase();
+  const metadata = typeof payload.metadata === "object" && payload.metadata !== null ? payload.metadata : {};
+
+  if (!description) {
+    throw new Error("Manual GL journal description is missing.");
+  }
+  if (!Array.isArray(lines) || lines.length < 2) {
+    throw new Error("Manual GL journal lines are missing.");
+  }
+  if (Number.isNaN(postingDate.getTime())) {
+    throw new Error("Manual GL journal posting date is invalid.");
+  }
+
+  const journal = await postJournal({
+    description,
+    lines,
+    postingDate,
+    referenceType,
+    referenceId: approvalRequest._id,
+    source: "ADMIN_APPROVAL",
+    metadata: {
+      ...metadata,
+      approvalRequestId: approvalRequest._id,
+      requestedBy: approvalRequest.requestedBy,
+      reviewedBy: reviewerId,
+    },
+  });
+
+  await AuditLog.create({
+    userId: reviewerId,
+    action: "ADMIN_GL_MANUAL_JOURNAL_EXECUTED",
+    metadata: {
+      approvalRequestId: approvalRequest._id,
+      journalId: journal._id,
+      journalNumber: journal.journalNumber,
+      totalDebit: journal.totalDebit,
+      totalCredit: journal.totalCredit,
+      description,
+    },
+  });
+
+  return {
+    executed: true,
+    result: {
+      journalId: journal._id,
+      journalNumber: journal.journalNumber,
+      totalDebit: journal.totalDebit,
+      totalCredit: journal.totalCredit,
+      postingDate: journal.postingDate,
+    },
+    message: "Manual GL journal executed from approved request.",
+  };
+};
+
+const executeMoneyOutPolicyUpdate = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const nextPolicyRaw = payload.nextPolicy || {};
+  const changeNote = String(payload.changeNote || approvalRequest.requestNote || "Money-out policy update")
+    .trim()
+    .slice(0, 240);
+  const nextPolicy = normalizePolicyPayload(nextPolicyRaw);
+
+  const config = await applyMoneyOutPolicy({
+    nextPolicy,
+    updatedBy: reviewerId,
+    source: "ADMIN_APPROVAL",
+    changeNote,
+  });
+
+  await AuditLog.create({
+    userId: reviewerId,
+    action: "ADMIN_MONEY_OUT_POLICY_UPDATED",
+    metadata: {
+      approvalRequestId: approvalRequest._id,
+      policyConfigId: config._id,
+      version: config.version,
+      source: config.source,
+      changeNote,
+      policy: {
+        maxSingleTransfer: config.maxSingleTransfer,
+        dailyTransferLimit: config.dailyTransferLimit,
+        highValueTransferThreshold: config.highValueTransferThreshold,
+        requireTransferOtpForHighValue: config.requireTransferOtpForHighValue,
+        maxSingleWithdrawal: config.maxSingleWithdrawal,
+        dailyWithdrawalLimit: config.dailyWithdrawalLimit,
+        enforceBeneficiary: config.enforceBeneficiary,
+        allowDirectTransferWithPin: config.allowDirectTransferWithPin,
+        requireVerifiedBeneficiary: config.requireVerifiedBeneficiary,
+      },
+    },
+  });
+
+  return {
+    executed: true,
+    result: {
+      policyConfigId: config._id,
+      version: config.version,
+      source: config.source,
+      changeNote: config.changeNote,
+    },
+    message: "Money-out policy updated from approved request.",
+  };
+};
+
+const executeRegulatoryPolicyUpdate = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const nextPolicyRaw = payload.nextPolicy || {};
+  const changeNote = String(payload.changeNote || approvalRequest.requestNote || "Regulatory policy update")
+    .trim()
+    .slice(0, 240);
+  const nextPolicy = normalizeRegulatoryPolicyPayload(nextPolicyRaw);
+
+  const config = await applyRegulatoryPolicy({
+    nextPolicy,
+    updatedBy: reviewerId,
+    source: "ADMIN_APPROVAL",
+    changeNote,
+  });
+
+  await AuditLog.create({
+    userId: reviewerId,
+    action: "ADMIN_REGULATORY_POLICY_UPDATED",
+    metadata: {
+      approvalRequestId: approvalRequest._id,
+      policyConfigId: config._id,
+      version: config.version,
+      source: config.source,
+      changeNote,
+      policy: {
+        ctrCashThreshold: config.ctrCashThreshold,
+        minLcrRatio: config.minLcrRatio,
+        maxLoanToDepositRatio: config.maxLoanToDepositRatio,
+        openStrAlertThreshold: config.openStrAlertThreshold,
+        criticalStrAlertThreshold: config.criticalStrAlertThreshold,
+      },
+    },
+  });
+
+  return {
+    executed: true,
+    result: {
+      policyConfigId: config._id,
+      version: config.version,
+      source: config.source,
+      changeNote: config.changeNote,
+    },
+    message: "Regulatory policy updated from approved request.",
+  };
+};
+
+const executeTreasurySnapshotCreate = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const snapshot = await createTreasurySnapshotFromPayload({
+    payload,
+    actorUserId: reviewerId,
+    source: "ADMIN_APPROVAL",
+    approvalRequestId: approvalRequest._id,
+  });
+
+  return {
+    executed: true,
+    result: {
+      snapshotId: snapshot._id,
+      asOfDate: snapshot.asOfDate,
+      crrRatio: snapshot.crrRatio,
+      slrRatio: snapshot.slrRatio,
+      lcrRatio: snapshot.lcrRatio,
+      netLiquidity: snapshot.netLiquidity,
+    },
+    message: "Treasury snapshot created from approved request.",
+  };
+};
+
+const executeRegulatoryReportPublish = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const publication = await publishRegulatoryReportFromPayload({
+    payload,
+    actorUserId: reviewerId,
+    source: "ADMIN_APPROVAL",
+    approvalRequestId: approvalRequest._id,
+  });
+
+  return {
+    executed: true,
+    result: publication,
+    message: "Regulatory report published from approved request.",
+  };
+};
+
+const executeRegulatoryAlertResolve = async ({ approvalRequest, reviewerId }) => {
+  const payload = approvalRequest.payload || {};
+  const requestedAlertId = payload.alertId || approvalRequest.targetId;
+  const resolutionNote = String(
+    payload.resolutionNote || approvalRequest.reviewNote || approvalRequest.requestNote || "Resolved by admin approval"
+  )
+    .trim()
+    .slice(0, 300);
+
+  const existingAlert = await RegulatoryAlert.findById(requestedAlertId);
+  if (!existingAlert) {
+    throw new Error("Regulatory alert not found.");
+  }
+  if (existingAlert.status === "RESOLVED") {
+    return {
+      executed: false,
+      result: {
+        alertId: existingAlert._id,
+        alertKey: existingAlert.alertKey,
+        indicatorCode: existingAlert.indicatorCode,
+        status: existingAlert.status,
+      },
+      message: "Regulatory alert already resolved.",
+    };
+  }
+
+  const alert = await resolveRegulatoryAlertFromPayload({
+    payload: {
+      alertId: existingAlert._id,
+      resolutionNote: resolutionNote || "Resolved by admin approval",
+    },
+    actorUserId: reviewerId,
+    source: "ADMIN_APPROVAL",
+    approvalRequestId: approvalRequest._id,
+  });
+
+  return {
+    executed: true,
+    result: {
+      alertId: alert._id,
+      alertKey: alert.alertKey,
+      indicatorCode: alert.indicatorCode,
+      status: alert.status,
+      resolvedAt: alert.resolvedAt,
+    },
+    message: "Regulatory alert resolved from approved request.",
+  };
+};
+
+const executeApprovedAction = async ({ approvalRequest, reviewerId, req }) => {
   if (approvalRequest.actionType === "ACCOUNT_STATUS_UPDATE") {
     return executeAccountStatusUpdate({ approvalRequest, reviewerId });
   }
   if (approvalRequest.actionType === "LOAN_STATUS_UPDATE") {
     return executeLoanStatusUpdate({ approvalRequest, reviewerId });
   }
+  if (approvalRequest.actionType === "TRANSFER_EXECUTION") {
+    return executeApprovedTransferExecution({
+      approvalRequest,
+      reviewerId,
+      ipAddress: req?.ip || "",
+      userAgent: req?.headers?.["user-agent"] || "",
+    });
+  }
+  if (approvalRequest.actionType === "SIP_PLAN_CREATION") {
+    return executeApprovedSipPlanCreation({
+      approvalRequest,
+      reviewerId,
+    });
+  }
+  if (approvalRequest.actionType === "FD_BOOKING_CREATE") {
+    return executeApprovedFixedDepositBooking({
+      approvalRequest,
+      reviewerId,
+      ipAddress: req?.ip || "",
+      userAgent: req?.headers?.["user-agent"] || "",
+    });
+  }
+  if (approvalRequest.actionType === "RD_CREATION") {
+    return executeApprovedRecurringDepositCreation({
+      approvalRequest,
+      reviewerId,
+      ipAddress: req?.ip || "",
+      userAgent: req?.headers?.["user-agent"] || "",
+    });
+  }
   if (approvalRequest.actionType === "PAYMENT_REFUND") {
     return executePaymentRefund({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "GL_MANUAL_JOURNAL") {
+    return executeGlManualJournal({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "MONEY_OUT_POLICY_UPDATE") {
+    return executeMoneyOutPolicyUpdate({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "REGULATORY_POLICY_UPDATE") {
+    return executeRegulatoryPolicyUpdate({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "TREASURY_SNAPSHOT_CREATE") {
+    return executeTreasurySnapshotCreate({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "REGULATORY_REPORT_PUBLISH") {
+    return executeRegulatoryReportPublish({ approvalRequest, reviewerId });
+  }
+  if (approvalRequest.actionType === "REGULATORY_ALERT_RESOLVE") {
+    return executeRegulatoryAlertResolve({ approvalRequest, reviewerId });
   }
   throw new Error("Unsupported approval action type.");
 };
 
 const notifyApprovalRequester = async ({ approvalRequest, decision, reviewNote, executionMessage }) => {
-  if (!isEmailConfigured()) {
-    return;
-  }
-
   try {
     const requester = await User.findById(approvalRequest.requestedBy).select("firstName email");
-    if (!requester?.email) return;
+    if (!requester?._id) return;
+
+    const normalizedDecision = String(decision || "").toUpperCase();
+    const titleMap = {
+      EXECUTED: "Approval Request Executed",
+      FAILED: "Approval Request Failed",
+      REJECTED: "Approval Request Rejected",
+      ESCALATED: "Approval Request Escalated",
+    };
+    const typeMap = {
+      EXECUTED: "SUCCESS",
+      FAILED: "WARNING",
+      REJECTED: "WARNING",
+      ESCALATED: "INFO",
+    };
+    const title = titleMap[normalizedDecision] || "Approval Request Updated";
+    const fallbackMessage =
+      normalizedDecision === "EXECUTED"
+        ? "Your request has been approved and executed."
+        : normalizedDecision === "FAILED"
+        ? "Your request was approved but failed during execution."
+        : normalizedDecision === "REJECTED"
+        ? "Your request was rejected by reviewer."
+        : normalizedDecision === "ESCALATED"
+        ? "Your request has been escalated for priority review."
+        : "Your request status has been updated.";
+
+    await createNotification({
+      userId: requester._id,
+      title,
+      message: executionMessage || fallbackMessage,
+      category: "ACCOUNT",
+      type: typeMap[normalizedDecision] || "INFO",
+      actionLink: "/core-banking?module=approvals",
+      metadata: {
+        approvalRequestId: approvalRequest._id,
+        actionType: approvalRequest.actionType,
+        targetType: approvalRequest.targetType,
+        decision: normalizedDecision || decision,
+        reviewNote: reviewNote || "",
+      },
+    });
+
+    if (!isEmailConfigured() || !requester.email) {
+      return;
+    }
 
     await sendApprovalDecisionEmail({
       email: requester.email,
@@ -529,6 +871,296 @@ router.get("/stats", protect, adminOnly, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// Get active money-out policy
+router.get("/policy/money-out", protect, adminOnly, async (req, res) => {
+  try {
+    const state = getMoneyOutPolicyState();
+    const activeConfig = await MoneyOutPolicyConfig.findOne({ key: "DEFAULT", isActive: true })
+      .populate("updatedBy", "firstName lastName email phone role")
+      .sort({ version: -1 });
+
+    return res.status(200).json({
+      success: true,
+      policy: state.policy,
+      source: state.source,
+      version: state.version,
+      updatedAt: state.updatedAt,
+      config: activeConfig,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get money-out policy history
+router.get("/policy/money-out/history", protect, adminOnly, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 200);
+    const history = await MoneyOutPolicyConfig.find({ key: "DEFAULT" })
+      .populate("updatedBy", "firstName lastName email phone role")
+      .sort({ version: -1 })
+      .limit(limit);
+
+    return res.status(200).json({
+      success: true,
+      total: history.length,
+      history,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Request / apply money-out policy update (maker-checker aware)
+router.post("/policy/money-out/request", protect, adminOnly, validate(moneyOutPolicyUpdateSchema), async (req, res) => {
+  try {
+    const currentState = getMoneyOutPolicyState();
+    const nextPolicy = normalizePolicyPayload(req.body || {}, currentState.policy);
+    const changeNote = String(req.body?.changeNote || "Money-out policy update requested")
+      .trim()
+      .slice(0, 240);
+
+    if (nextPolicy.dailyTransferLimit < nextPolicy.maxSingleTransfer) {
+      return res.status(400).json({
+        success: false,
+        message: "Daily transfer limit must be greater than or equal to single transfer limit.",
+      });
+    }
+    if (nextPolicy.dailyWithdrawalLimit < nextPolicy.maxSingleWithdrawal) {
+      return res.status(400).json({
+        success: false,
+        message: "Daily withdrawal limit must be greater than or equal to single withdrawal limit.",
+      });
+    }
+    if (nextPolicy.highValueTransferThreshold > nextPolicy.maxSingleTransfer) {
+      return res.status(400).json({
+        success: false,
+        message: "High-value threshold cannot exceed single transfer limit.",
+      });
+    }
+
+    if (isApprovalRequired("MONEY_OUT_POLICY_UPDATE")) {
+      const existingRequest = await ApprovalRequest.findOne({
+        actionType: "MONEY_OUT_POLICY_UPDATE",
+        targetType: "SYSTEM_POLICY",
+        targetId: SYSTEM_POLICY_TARGET_ID,
+        status: "PENDING",
+      });
+
+      if (existingRequest) {
+        return res.status(202).json({
+          success: true,
+          pendingApproval: true,
+          message: "An approval request is already pending for money-out policy update.",
+          approvalRequest: existingRequest,
+        });
+      }
+
+      const approvalRequest = await ApprovalRequest.create({
+        actionType: "MONEY_OUT_POLICY_UPDATE",
+        targetType: "SYSTEM_POLICY",
+        targetId: SYSTEM_POLICY_TARGET_ID,
+        payload: {
+          previousPolicy: currentState.policy,
+          nextPolicy,
+          changeNote,
+        },
+        requestNote: changeNote,
+        requestedBy: req.userId,
+      });
+
+      await createAdminAudit({
+        req,
+        action: "ADMIN_APPROVAL_REQUEST_CREATED",
+        metadata: {
+          approvalRequestId: approvalRequest._id,
+          actionType: approvalRequest.actionType,
+          targetType: approvalRequest.targetType,
+          targetId: approvalRequest.targetId,
+          changeNote,
+        },
+      });
+
+      return res.status(202).json({
+        success: true,
+        pendingApproval: true,
+        message: "Money-out policy update submitted for approval.",
+        approvalRequest,
+      });
+    }
+
+    const config = await applyMoneyOutPolicy({
+      nextPolicy,
+      updatedBy: req.userId,
+      source: "ADMIN_DIRECT",
+      changeNote,
+    });
+
+    await createAdminAudit({
+      req,
+      action: "ADMIN_MONEY_OUT_POLICY_UPDATED",
+      metadata: {
+        policyConfigId: config._id,
+        version: config.version,
+        source: config.source,
+        changeNote: config.changeNote,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      pendingApproval: false,
+      message: "Money-out policy updated successfully.",
+      config,
+      policy: getMoneyOutPolicyState().policy,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get active regulatory policy
+router.get("/policy/regulatory", protect, adminOnly, async (req, res) => {
+  try {
+    const state = getRegulatoryPolicyState();
+    const activeConfig = await RegulatoryPolicyConfig.findOne({ key: "DEFAULT", isActive: true })
+      .populate("updatedBy", "firstName lastName email phone role")
+      .sort({ version: -1 });
+
+    return res.status(200).json({
+      success: true,
+      policy: state.policy,
+      source: state.source,
+      version: state.version,
+      updatedAt: state.updatedAt,
+      config: activeConfig,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get regulatory policy history
+router.get("/policy/regulatory/history", protect, adminOnly, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 200);
+    const history = await RegulatoryPolicyConfig.find({ key: "DEFAULT" })
+      .populate("updatedBy", "firstName lastName email phone role")
+      .sort({ version: -1 })
+      .limit(limit);
+
+    return res.status(200).json({
+      success: true,
+      total: history.length,
+      history,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Request / apply regulatory policy update (maker-checker aware)
+router.post(
+  "/policy/regulatory/request",
+  protect,
+  adminOnly,
+  validate(regulatoryPolicyUpdateSchema),
+  async (req, res) => {
+    try {
+      const currentState = getRegulatoryPolicyState();
+      const nextPolicy = normalizeRegulatoryPolicyPayload(req.body || {}, currentState.policy);
+      const changeNote = String(req.body?.changeNote || "Regulatory policy update requested")
+        .trim()
+        .slice(0, 240);
+
+      if (nextPolicy.criticalStrAlertThreshold > nextPolicy.openStrAlertThreshold) {
+        return res.status(400).json({
+          success: false,
+          message: "Critical STR alert threshold cannot be greater than open STR threshold.",
+        });
+      }
+
+      if (isApprovalRequired("REGULATORY_POLICY_UPDATE")) {
+        const existingRequest = await ApprovalRequest.findOne({
+          actionType: "REGULATORY_POLICY_UPDATE",
+          targetType: "SYSTEM_POLICY",
+          targetId: SYSTEM_POLICY_TARGET_ID,
+          status: "PENDING",
+        });
+
+        if (existingRequest) {
+          return res.status(202).json({
+            success: true,
+            pendingApproval: true,
+            message: "An approval request is already pending for regulatory policy update.",
+            approvalRequest: existingRequest,
+          });
+        }
+
+        const approvalRequest = await ApprovalRequest.create({
+          actionType: "REGULATORY_POLICY_UPDATE",
+          targetType: "SYSTEM_POLICY",
+          targetId: SYSTEM_POLICY_TARGET_ID,
+          payload: {
+            previousPolicy: currentState.policy,
+            nextPolicy,
+            changeNote,
+          },
+          requestNote: changeNote,
+          requestedBy: req.userId,
+        });
+
+        await createAdminAudit({
+          req,
+          action: "ADMIN_APPROVAL_REQUEST_CREATED",
+          metadata: {
+            approvalRequestId: approvalRequest._id,
+            actionType: approvalRequest.actionType,
+            targetType: approvalRequest.targetType,
+            targetId: approvalRequest.targetId,
+            changeNote,
+          },
+        });
+
+        return res.status(202).json({
+          success: true,
+          pendingApproval: true,
+          message: "Regulatory policy update submitted for approval.",
+          approvalRequest,
+        });
+      }
+
+      const config = await applyRegulatoryPolicy({
+        nextPolicy,
+        updatedBy: req.userId,
+        source: "ADMIN_DIRECT",
+        changeNote,
+      });
+
+      await createAdminAudit({
+        req,
+        action: "ADMIN_REGULATORY_POLICY_UPDATED",
+        metadata: {
+          policyConfigId: config._id,
+          version: config.version,
+          source: config.source,
+          changeNote: config.changeNote,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        pendingApproval: false,
+        message: "Regulatory policy updated successfully.",
+        config,
+        policy: getRegulatoryPolicyState().policy,
+      });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
 
 // Get audit logs with filters
 router.get("/audit-logs", protect, adminOnly, async (req, res) => {
@@ -892,6 +1524,7 @@ router.post("/approval-requests/:approvalId/approve", protect, adminOnly, valida
       executionResult = await executeApprovedAction({
         approvalRequest,
         reviewerId: req.userId,
+        req,
       });
       approvalRequest.status = "EXECUTED";
       approvalRequest.executedAt = new Date();
@@ -982,6 +1615,14 @@ router.post("/approval-requests/:approvalId/reject", protect, adminOnly, validat
       return res.status(403).json({
         success: false,
         message: "Dual-control policy enabled. Requester cannot reject own request.",
+      });
+    }
+
+    if (approvalRequest.actionType === "SIP_PLAN_CREATION") {
+      await executeRejectedSipPlanCreation({
+        approvalRequest,
+        reviewerId: req.userId,
+        reviewNote,
       });
     }
 

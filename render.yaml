@@ -1,0 +1,98 @@
+services:
+  - type: web
+    name: bankease-api
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRE
+        value: 15m
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: STANDING_INSTRUCTION_PROCESSOR_ENABLED
+        value: "false"
+      - key: CORE_BANKING_SCHEDULER_ENABLED
+        value: "false"
+      - key: PAYMENT_GATEWAY_MODE
+        value: MOCK
+      - key: EMAIL_TRANSPORT
+        value: service
+      - key: EMAIL_SERVICE
+        value: gmail
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: BankIndia
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+
+  - type: worker
+    name: bankease-jobs
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRE
+        value: 15m
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: STANDING_INSTRUCTION_PROCESSOR_ENABLED
+        value: "true"
+      - key: CORE_BANKING_SCHEDULER_ENABLED
+        value: "true"
+      - key: PAYMENT_GATEWAY_MODE
+        value: MOCK
+      - key: EMAIL_TRANSPORT
+        value: service
+      - key: EMAIL_SERVICE
+        value: gmail
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: BankIndia
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+
+  - type: web
+    name: bankease-frontend
+    env: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false

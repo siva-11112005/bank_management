@@ -58,6 +58,25 @@ const LoanSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    disbursedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    disbursedAmount: {
+      type: Number,
+      default: 0,
+      min: [0, "Disbursed amount cannot be negative"],
+    },
+    disbursedAt: {
+      type: Date,
+      default: null,
+    },
+    disbursalTransactionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Transaction",
+      default: null,
+    },
     amountPaid: {
       type: Number,
       default: 0,

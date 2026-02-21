@@ -45,6 +45,7 @@ const Dashboard = () => {
   const dashboardGuides = useMemo(() => {
     const baseGuides = [
       { category: "accounts", route: "/services/accounts/nri-accounts", cta: "Manage Account Services" },
+      { category: "deposits", route: "/core-banking", cta: "Open Deposit Control" },
       { category: "loans", route: "/services/loans/emi-calculator", cta: "Plan Loan and EMI" },
       { category: "support", route: "/services/support/contact-us", cta: "Get Banking Support" },
       { category: "regulatory", route: "/services/regulatory/disclosures", cta: "Review Policies" },

@@ -8,6 +8,7 @@ const AuditLog = require("../models/AuditLog");
 const ApprovalRequest = require("../models/ApprovalRequest");
 const { isApprovalRequired } = require("../utils/adminApprovalPolicy");
 const { createNotification } = require("../utils/notificationService");
+const { postCustomerDepositJournal, postCustomerWithdrawalJournal } = require("../utils/coreBanking/glService");
 
 const getGatewayMode = () => {
   const mode = String(process.env.PAYMENT_GATEWAY_MODE || "MOCK").trim().toUpperCase();
@@ -179,6 +180,19 @@ const creditPaymentToAccount = async ({ payment, providerPaymentId, signature, s
     { session }
   );
 
+  await postCustomerDepositJournal({
+    amount: Number(payment.amount || 0),
+    referenceType: "PAYMENT_CREDIT",
+    referenceId: creditTx[0]._id,
+    metadata: {
+      userId: payment.userId,
+      accountId: account._id,
+      paymentId: payment._id,
+      gateway: payment.gateway,
+    },
+    session,
+  });
+
   payment.status = "SUCCESS";
   payment.providerPaymentId = providerPaymentId || payment.providerPaymentId;
   payment.signature = signature || payment.signature;
@@ -242,6 +256,19 @@ const reversePaymentCredit = async ({ payment, reason, session, updatedByAdmin =
     ],
     { session }
   );
+
+  await postCustomerWithdrawalJournal({
+    amount: Number(payment.amount || 0),
+    referenceType: "PAYMENT_REFUND",
+    referenceId: refundTx[0]._id,
+    metadata: {
+      userId: payment.userId,
+      accountId: account._id,
+      paymentId: payment._id,
+      gateway: payment.gateway,
+    },
+    session,
+  });
 
   payment.status = "REFUNDED";
   payment.refundedAt = new Date();

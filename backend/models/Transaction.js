@@ -14,7 +14,21 @@ const TransactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["DEPOSIT", "WITHDRAWAL", "TRANSFER", "LOAN_PAYMENT", "PAYMENT_CREDIT", "PAYMENT_REFUND"],
+      enum: [
+        "DEPOSIT",
+        "WITHDRAWAL",
+        "TRANSFER",
+        "LOAN_DISBURSAL",
+        "LOAN_PAYMENT",
+        "PAYMENT_CREDIT",
+        "PAYMENT_REFUND",
+        "INTEREST_CREDIT",
+        "FD_BOOKING",
+        "FD_CLOSURE",
+        "RD_INSTALLMENT",
+        "RD_CLOSURE",
+        "SIP_INSTALLMENT",
+      ],
       required: true,
     },
     amount: {

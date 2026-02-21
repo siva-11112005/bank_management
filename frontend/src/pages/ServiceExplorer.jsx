@@ -343,7 +343,7 @@ const getCategoryAction = ({ category, isAuthenticated }) => {
     case "accounts":
       return { to: buildServiceRequestPath({ category: "accounts" }), label: "Manage Account Requests" };
     case "deposits":
-      return { to: buildServiceRequestPath({ category: "deposits" }), label: "Book Deposit Request" };
+      return { to: "/core-banking", label: "Open Deposit Control" };
     case "cards":
       return { to: "/cards", label: "Manage Card Usage" };
     case "loans":
@@ -398,14 +398,14 @@ const productActionMap = {
     "profile-updation": { to: "/profile", label: "Update Profile" },
   },
   deposits: {
-    "fixed-deposit": { to: "/dashboard", label: "Open Fixed Deposit" },
-    "recurring-deposit": { to: "/dashboard", label: "Start RD Plan" },
-    "tax-saver-fd": { to: "/dashboard", label: "Book Tax Saver FD" },
-    "nre-deposits": { to: "/dashboard", label: "Book NRE Deposit" },
-    "nro-deposits": { to: "/dashboard", label: "Book NRO Deposit" },
-    "open-fixed-deposit": { to: "/dashboard", label: "Open Fixed Deposit" },
-    "add-nre-nro-fixed-deposit": { to: "/dashboard", label: "Book NRE/NRO FD" },
-    "assured-returns-deposits": { to: "/dashboard", label: "Explore Assured Returns" },
+    "fixed-deposit": { to: "/core-banking?module=fd", label: "Open Fixed Deposit" },
+    "recurring-deposit": { to: "/core-banking?module=rd", label: "Start RD Plan" },
+    "tax-saver-fd": { to: "/core-banking?module=fd", label: "Book Tax Saver FD" },
+    "nre-deposits": { to: "/core-banking?module=fd", label: "Book NRE Deposit" },
+    "nro-deposits": { to: "/core-banking?module=fd", label: "Book NRO Deposit" },
+    "open-fixed-deposit": { to: "/core-banking?module=fd", label: "Open Fixed Deposit" },
+    "add-nre-nro-fixed-deposit": { to: "/core-banking?module=fd", label: "Book NRE/NRO FD" },
+    "assured-returns-deposits": { to: "/core-banking", label: "Explore Assured Returns" },
   },
   cards: {
     "credit-cards": { to: "/cards", label: "Apply Credit Card" },
@@ -440,7 +440,7 @@ const productActionMap = {
   investments: {
     "mutual-funds": { to: "/profile", label: "Start Mutual Fund Request" },
     "demat-account": { to: "/profile", label: "Open Demat Request" },
-    "sip-plans": { to: "/services/calculators/sip-calculator", label: "Plan SIP" },
+    "sip-plans": { to: "/core-banking?module=sip", label: "Request SIP Plan" },
     bonds: { to: "/profile", label: "Invest in Bonds" },
     "wealth-solutions": { to: "/profile", label: "Connect Relationship Manager" },
     "high-net-worth-banking": { to: "/profile", label: "Connect Relationship Manager" },

@@ -271,8 +271,47 @@ userId, accountId, loanType, principal, interestRate, tenure, emi, status, amoun
 1. `npm run build`
 2. Deploy build folder to Vercel/Netlify
 
-## 📚 Learning Resources
+### Render (Recommended)
+This repo now includes `render.yaml` with 3 services:
+- `bankease-api` (Node web API)
+- `bankease-jobs` (Node worker for schedulers/cron-like jobs)
+- `bankease-frontend` (Static React app)
 
+Quick steps:
+1. Push this repo to GitHub.
+2. In Render, choose **New + -> Blueprint** and select this repository.
+3. Fill required env values in Render dashboard:
+   - `MONGO_URI`
+   - `JWT_SECRET`
+   - `FRONTEND_URL`
+   - `CORS_ORIGIN`
+   - `REACT_APP_API_URL`
+   - `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS` (if OTP/email needed)
+4. Keep cookie settings for cross-domain deploy:
+   - `COOKIE_SAME_SITE=none`
+   - `COOKIE_SECURE=true`
+
+Note:
+- Scheduler jobs are intentionally disabled on API service and enabled on worker service to avoid duplicate execution.
+
+Post-deploy smoke test:
+1. Open backend folder:
+   ```bash
+   cd backend
+   ```
+2. Run checks:
+   ```bash
+   API_BASE_URL=https://your-backend-service.onrender.com CHECK_CORS_ORIGIN=https://your-frontend-service.onrender.com npm run deploy:check
+   ```
+3. Optional auth flow check (login + profile):
+   ```bash
+   API_BASE_URL=https://your-backend-service.onrender.com CHECK_CORS_ORIGIN=https://your-frontend-service.onrender.com CHECK_LOGIN_EMAIL=your_test_user_email CHECK_LOGIN_PASSWORD=your_test_user_password npm run deploy:check
+   ```
+
+4. Full checklist:
+   - `RENDER_POST_DEPLOY_CHECKLIST.md`
+
+## 📚 Learning Resources
 - [MERN Stack Guide](https://www.mongodb.com/languages/mean-stack)
 - [JWT Authentication](https://jwt.io/)
 - [React Router](https://reactrouter.com/)

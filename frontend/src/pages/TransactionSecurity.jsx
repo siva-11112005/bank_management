@@ -9,6 +9,8 @@ const TransactionSecurity = () => {
   const [submitting, setSubmitting] = useState(false);
   const [hasPin, setHasPin] = useState(false);
   const [pinUpdatedAt, setPinUpdatedAt] = useState(null);
+  const [pinAttempts, setPinAttempts] = useState(0);
+  const [pinLockedUntil, setPinLockedUntil] = useState(null);
   const [message, setMessage] = useState({ type: "", text: "" });
   const [formData, setFormData] = useState({
     currentPin: "",
@@ -22,6 +24,8 @@ const TransactionSecurity = () => {
       if (response.data.success) {
         setHasPin(Boolean(response.data.user?.hasTransactionPin));
         setPinUpdatedAt(response.data.user?.transactionPinUpdatedAt || null);
+        setPinAttempts(Number(response.data.user?.transactionPinAttempts || 0));
+        setPinLockedUntil(response.data.user?.transactionPinLockedUntil || null);
       }
     } catch (_) {
       setMessage({ type: "error", text: "Unable to load security details." });
@@ -67,6 +71,8 @@ const TransactionSecurity = () => {
         setFormData({ currentPin: "", pin: "", confirmPin: "" });
         setHasPin(true);
         setPinUpdatedAt(response.data.transactionPinUpdatedAt || new Date().toISOString());
+        setPinAttempts(0);
+        setPinLockedUntil(null);
       }
     } catch (error) {
       setMessage({ type: "error", text: error.response?.data?.message || "Failed to update transaction PIN." });
@@ -83,6 +89,8 @@ const TransactionSecurity = () => {
     );
   }
 
+  const isLocked = Boolean(pinLockedUntil && new Date(pinLockedUntil) > new Date());
+
   return (
     <div className="transaction-security-container">
       <header className="transaction-security-head">
@@ -93,6 +101,11 @@ const TransactionSecurity = () => {
       </header>
 
       {message.text && <div className={`transaction-security-message ${message.type}`}>{message.text}</div>}
+      {isLocked ? (
+        <div className="transaction-security-message error">
+          Transaction access locked until {new Date(pinLockedUntil).toLocaleString("en-IN")}. Contact support or admin to unblock.
+        </div>
+      ) : null}
 
       <section className="transaction-security-grid">
         <article className="transaction-security-card">
@@ -103,6 +116,8 @@ const TransactionSecurity = () => {
             </span>
             <p>User: {user?.firstName} {user?.lastName}</p>
             <p>Phone: {user?.phone}</p>
+            <p>Failed attempts: {pinAttempts}</p>
+            <p>Transaction status: {isLocked ? "Blocked" : "Active"}</p>
             {pinUpdatedAt && <p>Last Updated: {new Date(pinUpdatedAt).toLocaleString("en-IN")}</p>}
           </div>
           <ul className="transaction-security-points">

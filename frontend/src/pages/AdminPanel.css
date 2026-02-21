@@ -276,6 +276,61 @@
   flex-wrap: wrap;
 }
 
+.policy-form-grid {
+  margin-bottom: 0.7rem;
+  border: 1px solid #d2dff1;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.78rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.policy-form-grid label {
+  display: grid;
+  gap: 0.22rem;
+  font-size: 0.73rem;
+  font-weight: 800;
+  color: #4f6c8d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.policy-form-grid input {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 8px;
+  padding: 0.42rem 0.54rem;
+  font-size: 0.8rem;
+  background: #fff;
+  color: #1f406b;
+}
+
+.policy-form-grid .policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+}
+
+.policy-form-grid .policy-toggle input {
+  width: auto;
+}
+
+.policy-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.policy-section-title {
+  margin-top: 1rem;
+}
+
 .tx-security-cell {
   display: grid;
   gap: 0.2rem;
@@ -594,6 +649,10 @@
   .admin-user-edit-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .policy-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -617,6 +676,10 @@
   }
 
   .admin-user-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-form-grid {
     grid-template-columns: 1fr;
   }
 

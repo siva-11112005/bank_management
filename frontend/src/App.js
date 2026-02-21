@@ -24,6 +24,7 @@ import SupportCenter from "./pages/SupportCenter";
 import Notifications from "./pages/Notifications";
 import Cards from "./pages/Cards";
 import KycCenter from "./pages/KycCenter";
+import CoreBanking from "./pages/CoreBanking";
 
 import "./App.css";
 
@@ -96,6 +97,14 @@ const AppContent = () => {
           }
         />
         <Route
+          path="/transactions/standing-instruction-secure"
+          element={
+            <ProtectedRoute>
+              <Transactions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/loans"
           element={
             <ProtectedRoute>
@@ -148,6 +157,14 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               <Notifications />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/core-banking"
+          element={
+            <ProtectedRoute>
+              <CoreBanking />
             </ProtectedRoute>
           }
         />

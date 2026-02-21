@@ -140,6 +140,35 @@
   padding: 0.6rem 0.72rem;
 }
 
+.mpin-lock-help {
+  border: 1px solid #f4d7ac;
+  border-radius: 12px;
+  background: #fff8ec;
+  color: #7a4f12;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.62rem 0.74rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.mpin-lock-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.mpin-lock-actions a {
+  border: 1px solid #d8ba88;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #7a4f12;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.4rem 0.6rem;
+  text-decoration: none;
+}
+
 .mpin-footnote {
   font-size: 0.75rem;
   font-weight: 700;

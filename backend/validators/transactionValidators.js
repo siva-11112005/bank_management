@@ -1,45 +1,55 @@
 const Joi = require("joi");
 
+const accountNumberSchema = Joi.string()
+  .trim()
+  .uppercase()
+  .pattern(/^[A-Z0-9]{6,32}$/)
+  .messages({
+    "string.pattern.base": "Account number must be 6-32 characters and contain only letters and digits.",
+  });
+
 const depositWithdrawSchema = Joi.object({
   body: Joi.object({
-    amount: Joi.number().positive().required(),
-    description: Joi.string().allow("").optional(),
+    amount: Joi.number().min(1).precision(2).required(),
+    description: Joi.string().max(240).allow("").optional(),
     transactionPin: Joi.string().pattern(/^\d{4}$/).optional(),
   }),
 });
 
 const transferSchema = Joi.object({
   body: Joi.object({
-    recipientAccountNumber: Joi.string().trim().required(),
-    amount: Joi.number().positive().required(),
-    description: Joi.string().allow("").optional(),
+    recipientAccountNumber: accountNumberSchema.required(),
+    amount: Joi.number().min(1).precision(2).required(),
+    description: Joi.string().trim().max(240).allow("").optional(),
     transactionPin: Joi.string().pattern(/^\d{4}$/).required(),
     otpSessionId: Joi.string().hex().length(24).optional(),
     otpCode: Joi.string().pattern(/^\d{6}$/).optional(),
-  }),
+  })
+    .with("otpSessionId", "otpCode")
+    .with("otpCode", "otpSessionId"),
 });
 
 const requestTransferOtpSchema = Joi.object({
   body: Joi.object({
-    recipientAccountNumber: Joi.string().trim().required(),
-    amount: Joi.number().positive().required(),
+    recipientAccountNumber: accountNumberSchema.required(),
+    amount: Joi.number().min(1).precision(2).required(),
   }),
 });
 
 const resolveRecipientSchema = Joi.object({
   body: Joi.object({
-    accountNumber: Joi.string().trim().min(6).required(),
+    accountNumber: accountNumberSchema.required(),
   }),
 });
 
 const createStandingInstructionSchema = Joi.object({
   body: Joi.object({
-    recipientAccountNumber: Joi.string().trim().min(6).required(),
-    amount: Joi.number().positive().required(),
+    recipientAccountNumber: accountNumberSchema.required(),
+    amount: Joi.number().min(1).precision(2).required(),
     frequency: Joi.string().valid("DAILY", "WEEKLY", "MONTHLY").required(),
     description: Joi.string().allow("").max(240).optional(),
     startDate: Joi.date().iso().optional(),
-    maxExecutions: Joi.number().integer().min(0).max(1000).optional(),
+    maxExecutions: Joi.number().integer().min(1).max(10).optional(),
     transactionPin: Joi.string().pattern(/^\d{4}$/).required(),
   }),
 });

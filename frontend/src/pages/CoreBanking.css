@@ -1,0 +1,510 @@
+.core-banking-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.35rem 1rem 2rem;
+}
+
+.core-banking-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.core-banking-head h1 {
+  font-size: clamp(1.38rem, 2vw, 2rem);
+  letter-spacing: -0.3px;
+}
+
+.core-banking-head p {
+  margin-top: 0.38rem;
+  color: var(--ink-700);
+  max-width: 760px;
+}
+
+.core-banking-head-badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.core-banking-head-badges span {
+  border: 1px solid #cdddf1;
+  border-radius: 999px;
+  background: #f4f8ff;
+  color: #2d507e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.24rem 0.62rem;
+}
+
+.core-banking-head-badges .admin-badge {
+  background: #eaf8f0;
+  border-color: #b9dbc6;
+  color: #176b36;
+}
+
+.core-banking-banner {
+  margin-top: 0.82rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.core-banking-banner.success {
+  color: #176b36;
+  background: #e9f8ee;
+  border-color: #bde5c9;
+}
+
+.core-banking-banner.error {
+  color: #9c1e32;
+  background: #fdecef;
+  border-color: #f4c6cf;
+}
+
+.core-banking-banner.info {
+  color: #174f8c;
+  background: #ecf4ff;
+  border-color: #cfe0f6;
+}
+
+.core-card-grid,
+.core-admin-grid {
+  margin-top: 0.92rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.74rem;
+}
+
+.core-card {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+  padding: 0.95rem;
+}
+
+.core-card-wide {
+  grid-column: 1 / -1;
+}
+
+.core-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.core-card-head h2 {
+  font-size: 1rem;
+}
+
+.core-card-head button {
+  border: 1px solid #c6d7ee;
+  border-radius: 10px;
+  background: #eff5ff;
+  color: var(--hdfc-blue);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+}
+
+.core-stats {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.core-stats span {
+  border: 1px solid #d0deef;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #355c8f;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.52rem;
+}
+
+.core-card-note {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--ink-700);
+}
+
+.core-form-grid {
+  margin-top: 0.68rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.core-form-inline {
+  grid-template-columns: 1fr auto;
+}
+
+.core-form-grid input,
+.core-form-grid select {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.84rem;
+}
+
+.core-form-grid button,
+.core-inline-actions button,
+.core-admin-actions button,
+.core-alert-actions button {
+  border: 1px solid #c8d7ec;
+  border-radius: 10px;
+  background: #edf3ff;
+  color: var(--hdfc-blue);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.56rem 0.72rem;
+  cursor: pointer;
+}
+
+.core-form-grid button:disabled,
+.core-inline-actions button:disabled,
+.core-admin-actions button:disabled,
+.core-alert-actions button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.core-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink-700);
+}
+
+.core-checkbox input {
+  width: auto;
+}
+
+.core-list {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.core-list-item {
+  border: 1px solid #d3e0f1;
+  border-radius: 12px;
+  background: #fafcff;
+  padding: 0.68rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.core-list-item strong {
+  font-size: 0.85rem;
+}
+
+.core-list-item p {
+  margin-top: 0.14rem;
+  font-size: 0.78rem;
+  color: var(--ink-700);
+}
+
+.core-list-item small {
+  margin-top: 0.12rem;
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ink-500);
+}
+
+.core-inline-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.core-report-actions {
+  margin-top: 0.5rem;
+}
+
+.core-inline-actions select {
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.54rem 0.62rem;
+  font-size: 0.76rem;
+}
+
+.core-alert-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  min-width: 230px;
+}
+
+.core-alert-actions input {
+  width: 100%;
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.5rem 0.62rem;
+  font-size: 0.75rem;
+}
+
+.core-status-badge {
+  border: 1px solid #d0deef;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #355c8f;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.28rem 0.52rem;
+  text-transform: uppercase;
+}
+
+.core-status-badge.open {
+  border-color: #f0c7a7;
+  background: #fff7f0;
+  color: #995018;
+}
+
+.core-status-badge.acknowledged {
+  border-color: #c8daf7;
+  background: #edf4ff;
+  color: #1c4e8c;
+}
+
+.core-status-badge.resolved {
+  border-color: #c6e3cf;
+  background: #eefaf2;
+  color: #1f6b3a;
+}
+
+.core-status-badge.pending {
+  border-color: #f0d3aa;
+  background: #fff7ee;
+  color: #8f4e19;
+}
+
+.core-status-badge.executed {
+  border-color: #c4dfc9;
+  background: #edf9f1;
+  color: #1f6b3a;
+}
+
+.core-status-badge.rejected,
+.core-status-badge.failed {
+  border-color: #f0c1c8;
+  background: #fdeef1;
+  color: #9c1e32;
+}
+
+.core-approval-filters {
+  margin-top: 0.6rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.core-approval-chips {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.core-approval-chips span {
+  border: 1px solid #d0deef;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #355c8f;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.18rem 0.5rem;
+}
+
+.core-approval-pagination {
+  margin-top: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.core-approval-pagination span {
+  font-size: 0.76rem;
+  color: #4c6b91;
+  font-weight: 700;
+}
+
+.core-approval-pagination button {
+  border: 1px solid #c8d7ec;
+  border-radius: 10px;
+  background: #edf3ff;
+  color: var(--hdfc-blue);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.48rem 0.72rem;
+  cursor: pointer;
+}
+
+.core-approval-pagination button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.core-empty {
+  border: 1px dashed #d0ddf0;
+  border-radius: 12px;
+  background: #f9fbff;
+  color: #527196;
+  font-size: 0.8rem;
+  padding: 0.74rem;
+}
+
+.core-admin-actions {
+  margin-top: 0.64rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.core-admin-inline {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
+}
+
+.core-admin-inline input {
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.56rem 0.66rem;
+  font-size: 0.8rem;
+}
+
+.core-kpi-grid {
+  margin-top: 0.62rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.core-kpi-grid > div {
+  border: 1px solid #d0ddef;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.58rem 0.66rem;
+}
+
+.core-kpi-grid small {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.core-kpi-grid strong {
+  margin-top: 0.14rem;
+  display: block;
+  font-size: 0.84rem;
+  color: #124379;
+}
+
+.core-amount-tag {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #1f4f88;
+}
+
+.core-loading-text {
+  margin-top: 0.82rem;
+  font-size: 0.82rem;
+  color: #47658a;
+  font-weight: 700;
+}
+
+.core-indicator.warning {
+  border-color: #f0c7a7;
+  background: #fff7f0;
+}
+
+.core-indicator.ok {
+  border-color: #c4dfc9;
+  background: #f2faf4;
+}
+
+.core-subgrid {
+  margin-top: 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.52rem;
+}
+
+.core-subcard {
+  border: 1px solid #d3e0f1;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.65rem;
+}
+
+.core-subcard h3 {
+  font-size: 0.86rem;
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 980px) {
+  .core-card-grid,
+  .core-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .core-subgrid {
+    grid-template-columns: 1fr;
+  }
+
+  .core-approval-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .core-banking-head {
+    flex-direction: column;
+  }
+
+  .core-form-grid,
+  .core-admin-inline,
+  .core-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .core-approval-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .core-form-inline {
+    grid-template-columns: 1fr;
+  }
+
+  .core-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .core-alert-actions {
+    width: 100%;
+    align-items: stretch;
+    min-width: 0;
+  }
+}

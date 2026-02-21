@@ -586,6 +586,9 @@ const HomeNavbar = () => {
                       <Link to="/profile" onClick={closeMenu}>
                         My Profile
                       </Link>
+                      <Link to="/core-banking" onClick={closeMenu}>
+                        Core Banking
+                      </Link>
                       <Link to="/cards" onClick={closeMenu}>
                         Cards
                       </Link>
@@ -653,6 +656,9 @@ const HomeNavbar = () => {
                   </Link>
                   <Link to="/payments" className="home-btn home-btn-outline" onClick={closeMenu}>
                     Payments
+                  </Link>
+                  <Link to="/core-banking" className="home-btn home-btn-outline" onClick={closeMenu}>
+                    Core Banking
                   </Link>
                   <Link to="/cards" className="home-btn home-btn-outline" onClick={closeMenu}>
                     Cards

@@ -36,6 +36,11 @@ const standingInstructionSchema = new mongoose.Schema(
       required: true,
       default: "MONTHLY",
     },
+    startDate: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
     description: {
       type: String,
       trim: true,

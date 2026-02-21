@@ -4,6 +4,7 @@ const {
   getMyTransactions,
   getAllTransactions,
   getSecurityRules,
+  getMonthlyStatementPdf,
   deposit,
   withdraw,
   transfer,
@@ -18,7 +19,7 @@ const {
 } = require("../controllers/transactionController");
 const { protect } = require("../middleware/authMiddleware");
 const { adminOnly } = require("../middleware/roleMiddleware");
-const { moneyOutLimiter, otpRequestLimiter } = require("../middleware/rateLimiters");
+const { moneyOutLimiter, otpRequestLimiter, recipientLookupLimiter } = require("../middleware/rateLimiters");
 const {
   depositWithdrawSchema,
   transferSchema,
@@ -43,10 +44,10 @@ const statementParams = Joi.object({
 // User routes
 router.get("/my-transactions", protect, getMyTransactions);
 router.get("/security-rules", protect, getSecurityRules);
-router.get("/statement/:year/:month", protect, validate(statementParams), require("../controllers/transactionController").getMonthlyStatementPdf);
+router.get("/statement/:year/:month", protect, validate(statementParams), getMonthlyStatementPdf);
 router.post("/deposit", protect, moneyOutLimiter, validate(depositWithdrawSchema), deposit);
 router.post("/withdraw", protect, moneyOutLimiter, validate(depositWithdrawSchema), withdraw);
-router.post("/resolve-recipient", protect, validate(resolveRecipientSchema), resolveRecipient);
+router.post("/resolve-recipient", protect, recipientLookupLimiter, validate(resolveRecipientSchema), resolveRecipient);
 router.post("/request-transfer-otp", protect, otpRequestLimiter, validate(requestTransferOtpSchema), requestTransferOtp);
 router.post("/transfer", protect, moneyOutLimiter, validate(transferSchema), transfer);
 router.get("/standing-instructions", protect, listStandingInstructions);
@@ -79,6 +80,7 @@ router.delete(
 router.post(
   "/standing-instructions/:instructionId/extend",
   protect,
+  moneyOutLimiter,
   validate(extendStandingInstructionSchema),
   extendStandingInstruction
 );

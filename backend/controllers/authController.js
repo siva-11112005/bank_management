@@ -22,6 +22,67 @@ const generateAccessToken = (id, role) => {
 const generateRefreshToken = () => crypto.randomBytes(64).toString("hex");
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
+const isProductionEnv = () => String(process.env.NODE_ENV || "development").toLowerCase() === "production";
+
+const resolveCookieSameSite = () => {
+  const configured = String(process.env.COOKIE_SAME_SITE || "")
+    .trim()
+    .toLowerCase();
+  if (["strict", "lax", "none"].includes(configured)) {
+    return configured;
+  }
+  return isProductionEnv() ? "none" : "strict";
+};
+
+const resolveCookieSecure = (sameSite) => {
+  const configured = String(process.env.COOKIE_SECURE || "")
+    .trim()
+    .toLowerCase();
+
+  if (["true", "1", "yes", "on"].includes(configured)) return true;
+  if (["false", "0", "no", "off"].includes(configured)) return false;
+
+  if (sameSite === "none") return true;
+  return isProductionEnv();
+};
+
+const getCookieBaseOptions = () => {
+  const sameSite = resolveCookieSameSite();
+  const secure = resolveCookieSecure(sameSite);
+  const domain = String(process.env.COOKIE_DOMAIN || "").trim();
+  const options = {
+    httpOnly: true,
+    secure,
+    sameSite,
+  };
+
+  if (domain) {
+    options.domain = domain;
+  }
+
+  return options;
+};
+
+const getAccessTokenCookieOptions = () => ({
+  ...getCookieBaseOptions(),
+  maxAge: 15 * 60 * 1000,
+});
+
+const getRefreshTokenCookieOptions = () => ({
+  ...getCookieBaseOptions(),
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: "/api/auth/refresh",
+});
+
+const getAccessTokenClearCookieOptions = () => ({
+  ...getCookieBaseOptions(),
+});
+
+const getRefreshTokenClearCookieOptions = () => ({
+  ...getCookieBaseOptions(),
+  path: "/api/auth/refresh",
+});
+
 const PROFILE_OTP_TTL_MS = 10 * 60 * 1000;
 const PROFILE_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const canUseEmailOtpFallback = () => {
@@ -170,19 +231,8 @@ exports.register = async (req, res) => {
     await user.save();
 
     // Set cookies
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 15 * 60 * 1000,
-    });
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/api/auth/refresh",
-    });
+    res.cookie("token", token, getAccessTokenCookieOptions());
+    res.cookie("refreshToken", refreshToken, getRefreshTokenCookieOptions());
 
     res.status(201).json({
       success: true,
@@ -262,19 +312,8 @@ exports.login = async (req, res) => {
     await user.save();
 
     // Set HTTP-only cookies
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 15 * 60 * 1000,
-    });
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/api/auth/refresh",
-    });
+    res.cookie("token", token, getAccessTokenCookieOptions());
+    res.cookie("refreshToken", refreshToken, getRefreshTokenCookieOptions());
 
     // Audit log: login success
     try {
@@ -321,7 +360,9 @@ exports.login = async (req, res) => {
 // Get current user profile
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select("+transactionPinHash");
+    const user = await User.findById(req.userId).select(
+      "+transactionPinHash +transactionPinAttempts +transactionPinLockedUntil"
+    );
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -341,6 +382,8 @@ exports.getProfile = async (req, res) => {
         createdAt: user.createdAt,
         hasTransactionPin: Boolean(user.transactionPinHash),
         transactionPinUpdatedAt: user.transactionPinUpdatedAt,
+        transactionPinAttempts: Number(user.transactionPinAttempts || 0),
+        transactionPinLockedUntil: user.transactionPinLockedUntil || null,
       },
     });
   } catch (error) {
@@ -579,12 +622,7 @@ exports.updateProfile = async (req, res) => {
     );
 
     const token = generateAccessToken(user._id, user.role);
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 15 * 60 * 1000,
-    });
+    res.cookie("token", token, getAccessTokenCookieOptions());
 
     try {
       await AuditLog.create({
@@ -778,8 +816,8 @@ exports.logout = async (req, res) => {
       await User.findByIdAndUpdate(req.userId, { refreshTokenHash: null });
     }
   } catch (_) {}
-  res.clearCookie("token");
-  res.clearCookie("refreshToken", { path: "/api/auth/refresh" });
+  res.clearCookie("token", getAccessTokenClearCookieOptions());
+  res.clearCookie("refreshToken", getRefreshTokenClearCookieOptions());
   res.status(200).json({ success: true, message: "Logged out successfully" });
 };
 
@@ -799,19 +837,8 @@ exports.refresh = async (req, res) => {
     user.refreshTokenHash = hashToken(newRefreshToken);
     await user.save();
     const token = generateAccessToken(user._id, user.role);
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 15 * 60 * 1000,
-    });
-    res.cookie("refreshToken", newRefreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: "/api/auth/refresh",
-    });
+    res.cookie("token", token, getAccessTokenCookieOptions());
+    res.cookie("refreshToken", newRefreshToken, getRefreshTokenCookieOptions());
     res.status(200).json({ success: true, token });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

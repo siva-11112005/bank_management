@@ -8,6 +8,7 @@ const ApprovalRequest = require("../models/ApprovalRequest");
 const { verifyTransactionPin } = require("../utils/transactionPin");
 const { isApprovalRequired } = require("../utils/adminApprovalPolicy");
 const { createNotification } = require("../utils/notificationService");
+const { postLoanDisbursalJournal, postLoanRepaymentJournal } = require("../utils/coreBanking/glService");
 
 const typeInterestRateMap = {
   PERSONAL: 12,
@@ -23,6 +24,283 @@ const typeInterestRateMap = {
   ALLIED_ACTIVITIES: 10,
   WORKING_CAPITAL: 11,
 };
+
+const loanStatusTransitions = {
+  PENDING: ["APPROVED", "REJECTED"],
+  APPROVED: ["CLOSED"],
+  REJECTED: ["APPROVED"],
+  CLOSED: [],
+};
+
+const normalizeLoanStatus = (value = "") => String(value || "").trim().toUpperCase();
+
+const isValidLoanStatusTransition = (previousStatus = "", nextStatus = "") => {
+  const previous = normalizeLoanStatus(previousStatus);
+  const next = normalizeLoanStatus(nextStatus);
+  if (!previous || !next) return false;
+  if (previous === next) return true;
+  const allowed = loanStatusTransitions[previous] || [];
+  return allowed.includes(next);
+};
+
+const toLoanLabel = (loanType = "") => String(loanType || "").replace(/_/g, " ");
+
+const transitionLoanStatus = async ({
+  loanId,
+  nextStatus,
+  reviewerId,
+  ipAddress = "",
+  userAgent = "",
+  source = "ADMIN_DIRECT",
+  approvalRequestId = null,
+} = {}) => {
+  const normalizedNextStatus = normalizeLoanStatus(nextStatus);
+  const loan = await Loan.findById(loanId);
+  if (!loan) {
+    throw new Error("Loan not found.");
+  }
+
+  const previousStatus = normalizeLoanStatus(loan.status);
+  if (!isValidLoanStatusTransition(previousStatus, normalizedNextStatus)) {
+    throw new Error(`Invalid loan status transition: ${previousStatus} -> ${normalizedNextStatus}.`);
+  }
+
+  if (previousStatus === normalizedNextStatus) {
+    return {
+      executed: false,
+      previousStatus,
+      nextStatus: normalizedNextStatus,
+      loan,
+      disbursedNow: false,
+      disbursedAmount: Number(loan.disbursedAmount || 0),
+      disbursalTransactionId: loan.disbursalTransactionId || null,
+      accountBalance: null,
+      message: `Loan already in ${normalizedNextStatus} state.`,
+    };
+  }
+
+  if (normalizedNextStatus === "APPROVED") {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const sessionLoan = await Loan.findById(loanId).session(session);
+      if (!sessionLoan) {
+        throw new Error("Loan not found.");
+      }
+
+      const currentStatus = normalizeLoanStatus(sessionLoan.status);
+      if (!isValidLoanStatusTransition(currentStatus, normalizedNextStatus)) {
+        throw new Error(`Invalid loan status transition: ${currentStatus} -> ${normalizedNextStatus}.`);
+      }
+
+      const account = await Account.findById(sessionLoan.accountId).session(session);
+      if (!account) {
+        throw new Error("Linked account not found.");
+      }
+      if (account.status !== "ACTIVE") {
+        throw new Error("Linked account is not active.");
+      }
+
+      let disbursedNow = false;
+      let disbursedAmount = Number(sessionLoan.disbursedAmount || 0);
+      let disbursalTransactionId = sessionLoan.disbursalTransactionId || null;
+
+      if (!sessionLoan.disbursalTransactionId) {
+        disbursedAmount = Number(sessionLoan.principal || 0);
+        if (!Number.isFinite(disbursedAmount) || disbursedAmount <= 0) {
+          throw new Error("Invalid loan principal for disbursal.");
+        }
+
+        account.balance = Number(account.balance || 0) + disbursedAmount;
+        await account.save({ session });
+
+        const disbursalTx = await Transaction.create(
+          [
+            {
+              accountId: account._id,
+              userId: sessionLoan.userId,
+              type: "LOAN_DISBURSAL",
+              amount: disbursedAmount,
+              description: `Loan disbursal (${sessionLoan.loanType})`,
+              status: "SUCCESS",
+              balanceAfterTransaction: account.balance,
+            },
+          ],
+          { session }
+        ).then((items) => items[0]);
+
+        await LedgerEntry.create(
+          [
+            {
+              accountId: account._id,
+              transactionId: disbursalTx._id,
+              type: "CREDIT",
+              amount: disbursedAmount,
+              balanceAfter: account.balance,
+              description: `Loan disbursal credit (${sessionLoan.loanType})`,
+            },
+          ],
+          { session }
+        );
+
+        await postLoanDisbursalJournal({
+          amount: disbursedAmount,
+          referenceType: "LOAN_DISBURSAL",
+          referenceId: disbursalTx._id,
+          metadata: {
+            loanId: sessionLoan._id,
+            userId: sessionLoan.userId,
+            accountId: account._id,
+            loanType: sessionLoan.loanType,
+            source,
+            approvalRequestId,
+          },
+          session,
+        });
+
+        sessionLoan.disbursedAt = new Date();
+        sessionLoan.disbursedAmount = disbursedAmount;
+        sessionLoan.disbursalTransactionId = disbursalTx._id;
+        sessionLoan.disbursedBy = reviewerId || null;
+        disbursalTransactionId = disbursalTx._id;
+        disbursedNow = true;
+      }
+
+      sessionLoan.status = "APPROVED";
+      if (!sessionLoan.startDate) {
+        sessionLoan.startDate = new Date();
+      }
+      sessionLoan.endDate = null;
+      sessionLoan.approvedBy = reviewerId || null;
+      await sessionLoan.save({ session });
+
+      await AuditLog.create(
+        [
+          {
+            userId: reviewerId || null,
+            action: "ADMIN_LOAN_STATUS_UPDATED",
+            ipAddress,
+            userAgent,
+            metadata: {
+              loanId: sessionLoan._id,
+              previousStatus: currentStatus,
+              nextStatus: "APPROVED",
+              loanType: sessionLoan.loanType,
+              principal: sessionLoan.principal,
+              disbursedNow,
+              disbursedAmount,
+              disbursalTransactionId,
+              source,
+              approvalRequestId,
+            },
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      try {
+        await createNotification({
+          userId: sessionLoan.userId,
+          title: "Loan Approved",
+          message: disbursedNow
+            ? `Your ${toLoanLabel(sessionLoan.loanType)} is approved and Rs ${Number(disbursedAmount || 0).toLocaleString(
+                "en-IN"
+              )} has been credited to your account.`
+            : `Your ${toLoanLabel(sessionLoan.loanType)} is approved.`,
+          category: "LOAN",
+          type: "SUCCESS",
+          actionLink: "/loans",
+          metadata: {
+            loanId: sessionLoan._id,
+            previousStatus: currentStatus,
+            currentStatus: "APPROVED",
+            disbursedNow,
+            disbursedAmount,
+            disbursalTransactionId,
+            source,
+            approvalRequestId,
+          },
+        });
+      } catch (_) {}
+
+      return {
+        executed: true,
+        previousStatus: currentStatus,
+        nextStatus: "APPROVED",
+        loan: sessionLoan,
+        disbursedNow,
+        disbursedAmount,
+        disbursalTransactionId,
+        accountBalance: account.balance,
+        message: disbursedNow ? "Loan approved and disbursed successfully." : "Loan approved successfully.",
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  }
+
+  loan.status = normalizedNextStatus;
+  if (normalizedNextStatus === "CLOSED") {
+    loan.endDate = new Date();
+  }
+  loan.approvedBy = reviewerId || null;
+  await loan.save();
+
+  try {
+    await AuditLog.create({
+      userId: reviewerId || null,
+      action: "ADMIN_LOAN_STATUS_UPDATED",
+      ipAddress,
+      userAgent,
+      metadata: {
+        loanId: loan._id,
+        previousStatus,
+        nextStatus: normalizedNextStatus,
+        loanType: loan.loanType,
+        principal: loan.principal,
+        source,
+        approvalRequestId,
+      },
+    });
+  } catch (_) {}
+
+  try {
+    await createNotification({
+      userId: loan.userId,
+      title: "Loan Status Updated",
+      message: `Your ${toLoanLabel(loan.loanType)} request moved from ${previousStatus} to ${normalizedNextStatus}.`,
+      category: "LOAN",
+      type: normalizedNextStatus === "REJECTED" ? "ERROR" : "INFO",
+      actionLink: "/loans",
+      metadata: {
+        loanId: loan._id,
+        previousStatus,
+        currentStatus: normalizedNextStatus,
+        source,
+        approvalRequestId,
+      },
+    });
+  } catch (_) {}
+
+  return {
+    executed: true,
+    previousStatus,
+    nextStatus: normalizedNextStatus,
+    loan,
+    disbursedNow: false,
+    disbursedAmount: Number(loan.disbursedAmount || 0),
+    disbursalTransactionId: loan.disbursalTransactionId || null,
+    accountBalance: null,
+    message: `Loan status updated to ${normalizedNextStatus}.`,
+  };
+};
+
+exports.transitionLoanStatus = transitionLoanStatus;
 
 exports.applyLoan = async (req, res) => {
   try {
@@ -204,6 +482,19 @@ exports.payLoanEmi = async (req, res) => {
         metadata: { loanId: loan._id, paymentAmount, status: loan.status },
       });
     } catch (_) {}
+    try {
+      await postLoanRepaymentJournal({
+        amount: Number(paymentAmount || 0),
+        referenceType: "LOAN_PAYMENT",
+        referenceId: transaction[0]?._id || null,
+        metadata: {
+          userId: req.userId,
+          accountId: account._id,
+          loanId: loan._id,
+          loanType: loan.loanType,
+        },
+      });
+    } catch (_) {}
 
     res.status(200).json({
       success: true,
@@ -240,14 +531,28 @@ exports.getAllLoans = async (req, res) => {
 exports.updateLoanStatus = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const { status } = req.body;
+    const status = normalizeLoanStatus(req.body?.status);
 
     const loan = await Loan.findById(loanId);
     if (!loan) {
       return res.status(404).json({ success: false, message: "Loan not found." });
     }
 
-    const previousStatus = loan.status;
+    const previousStatus = normalizeLoanStatus(loan.status);
+    if (!isValidLoanStatusTransition(previousStatus, status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid loan status transition: ${previousStatus} -> ${status}.`,
+      });
+    }
+
+    if (previousStatus === status) {
+      return res.status(200).json({
+        success: true,
+        message: `Loan already in ${status} state.`,
+        loan,
+      });
+    }
 
     if (isApprovalRequired("LOAN_STATUS_UPDATE")) {
       const existingRequest = await ApprovalRequest.findOne({
@@ -302,50 +607,24 @@ exports.updateLoanStatus = async (req, res) => {
         approvalRequest,
       });
     }
-
-    loan.status = status;
-    if (status === "APPROVED" && !loan.startDate) {
-      loan.startDate = new Date();
-    }
-    if (status === "CLOSED") {
-      loan.endDate = new Date();
-    }
-    loan.approvedBy = req.userId;
-
-    await loan.save();
-
-    try {
-      await createNotification({
-        userId: loan.userId,
-        title: "Loan Status Updated",
-        message: `Your ${loan.loanType.replace(/_/g, " ")} request moved from ${previousStatus} to ${status}.`,
-        category: "LOAN",
-        type: status === "REJECTED" ? "ERROR" : "INFO",
-        actionLink: "/loans",
-        metadata: { loanId: loan._id, previousStatus, currentStatus: status },
-      });
-    } catch (_) {}
-
-    try {
-      await AuditLog.create({
-        userId: req.userId,
-        action: "ADMIN_LOAN_STATUS_UPDATED",
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"] || "",
-        metadata: {
-          loanId: loan._id,
-          previousStatus,
-          nextStatus: status,
-          loanType: loan.loanType,
-          principal: loan.principal,
-        },
-      });
-    } catch (_) {}
+    const transitionResult = await transitionLoanStatus({
+      loanId: loan._id,
+      nextStatus: status,
+      reviewerId: req.userId,
+      ipAddress: req.ip || "",
+      userAgent: req.headers["user-agent"] || "",
+      source: "ADMIN_DIRECT",
+      approvalRequestId: null,
+    });
 
     res.status(200).json({
       success: true,
-      message: `Loan status updated to ${status}.`,
-      loan,
+      message: transitionResult.message || `Loan status updated to ${status}.`,
+      loan: transitionResult.loan,
+      disbursedNow: Boolean(transitionResult.disbursedNow),
+      disbursedAmount: Number(transitionResult.disbursedAmount || 0),
+      disbursalTransactionId: transitionResult.disbursalTransactionId || null,
+      accountBalance: transitionResult.accountBalance,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

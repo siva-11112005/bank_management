@@ -74,9 +74,9 @@ export const updateAccountStatus = (accountId, status) =>
   api.put(`/accounts/${accountId}/status`, { status });
 
 // Transaction APIs
-export const getMyTransactions = () => api.get("/transactions/my-transactions");
+export const getMyTransactions = (params = {}) => api.get("/transactions/my-transactions", { params });
 export const getTransactionSecurityRules = () => api.get("/transactions/security-rules");
-export const getAllTransactions = () => api.get("/transactions");
+export const getAllTransactions = (params = {}) => api.get("/transactions", { params });
 export const deposit = (data) => api.post("/transactions/deposit", data);
 export const withdraw = (data) => api.post("/transactions/withdraw", data);
 export const transfer = (data, config = {}) => api.post("/transactions/transfer", data, config);
@@ -114,6 +114,12 @@ export const escalateAdminApprovalRequest = (approvalId, escalationNote = "Escal
   api.post(`/admin/approval-requests/${approvalId}/escalate`, { escalationNote });
 export const escalateOverdueAdminApprovalRequests = (escalationNote = "Escalated due to pending SLA breach", limit = 200) =>
   api.post("/admin/approval-requests/escalate-overdue", { escalationNote, limit });
+export const getMoneyOutPolicyConfig = () => api.get("/admin/policy/money-out");
+export const getMoneyOutPolicyHistory = (query = {}) => api.get("/admin/policy/money-out/history", { params: query });
+export const requestMoneyOutPolicyUpdate = (data) => api.post("/admin/policy/money-out/request", data);
+export const getRegulatoryPolicyConfig = () => api.get("/admin/policy/regulatory");
+export const getRegulatoryPolicyHistory = (query = {}) => api.get("/admin/policy/regulatory/history", { params: query });
+export const requestRegulatoryPolicyUpdate = (data) => api.post("/admin/policy/regulatory/request", data);
 export const getAllLoans = () => api.get("/loans");
 export const updateLoanStatus = (loanId, status) => api.put(`/loans/${loanId}/status`, { status });
 
@@ -168,5 +174,60 @@ export const getMyKycRequests = () => api.get("/kyc/my-requests");
 export const submitKyc = (data) => api.post("/kyc/submit", data);
 export const getAllKycRequestsAdmin = (query = {}) => api.get("/kyc/admin/requests", { params: query });
 export const resolveKycRequestAdmin = (requestId, data) => api.put(`/kyc/admin/requests/${requestId}/resolve`, data);
+
+// Core Banking (GL, Interest Engine, FD/RD, AML, Settlement, UPI Handle)
+export const bootstrapCoreBanking = () => api.post("/core-banking/admin/bootstrap");
+export const getGlAccounts = () => api.get("/core-banking/admin/gl/accounts");
+export const getGlTrialBalance = (params = {}) => api.get("/core-banking/admin/gl/trial-balance", { params });
+export const getGlProfitAndLoss = (params = {}) => api.get("/core-banking/admin/gl/profit-loss", { params });
+export const getGlBalanceSheet = (params = {}) => api.get("/core-banking/admin/gl/balance-sheet", { params });
+export const requestManualGlJournalApproval = (data) => api.post("/core-banking/admin/gl/manual-journal/request", data);
+export const runInterestEod = (forDate) => api.post("/core-banking/admin/interest/run-eod", { forDate });
+export const runFixedDepositMaturityJob = (data = {}) => api.post("/core-banking/admin/fd/run-maturity", data);
+export const getInterestAccruals = (params = {}) => api.get("/core-banking/admin/interest/accruals", { params });
+export const createTreasurySnapshot = (data) => api.post("/core-banking/admin/treasury/snapshots", data);
+export const getTreasurySnapshots = (params = {}) => api.get("/core-banking/admin/treasury/snapshots", { params });
+export const getRegulatoryReport = (params = {}) => api.get("/core-banking/admin/regulatory/report", { params });
+export const downloadRegulatoryReportCsv = (params = {}) =>
+  api.get("/core-banking/admin/regulatory/report/export.csv", { params, responseType: "blob" });
+export const getRegulatoryAlerts = (params = {}) => api.get("/core-banking/admin/regulatory/alerts", { params });
+export const acknowledgeRegulatoryAlert = (alertId) =>
+  api.put(`/core-banking/admin/regulatory/alerts/${alertId}/acknowledge`);
+export const resolveRegulatoryAlert = (alertId, data) =>
+  api.put(`/core-banking/admin/regulatory/alerts/${alertId}/resolve`, data);
+export const runRegulatoryBreachMonitor = (data = {}) => api.post("/core-banking/admin/regulatory/monitor/run", data);
+export const requestRegulatoryReportPublish = (data) => api.post("/core-banking/admin/regulatory/publish-request", data);
+export const getRegulatoryPublications = (params = {}) => api.get("/core-banking/admin/regulatory/publications", { params });
+export const createFixedDeposit = (data) => api.post("/core-banking/fd", data);
+export const getMyFixedDeposits = () => api.get("/core-banking/fd/my");
+export const closeFixedDeposit = (fdId, data = {}) => api.post(`/core-banking/fd/${fdId}/close`, data);
+export const createRecurringDeposit = (data) => api.post("/core-banking/rd", data);
+export const getMyApprovalRequests = (params = {}) => api.get("/core-banking/approvals/my", { params });
+export const cancelMyApprovalRequest = (approvalId) => api.put(`/core-banking/approvals/${approvalId}/cancel`);
+export const runRecurringDepositAutoDebitJob = (data = {}) => api.post("/core-banking/admin/rd/run-autodebit", data);
+export const getDefaultedRecurringDeposits = (params = {}) => api.get("/core-banking/admin/rd/defaulted", { params });
+export const recoverDefaultedRecurringDeposit = (rdId, data = {}) =>
+  api.put(`/core-banking/admin/rd/${rdId}/recover`, data);
+export const forceDebitRecurringDepositByAdmin = (rdId, data = {}) =>
+  api.post(`/core-banking/admin/rd/${rdId}/force-debit`, data);
+export const getMyRecurringDeposits = () => api.get("/core-banking/rd/my");
+export const payRecurringInstallment = (rdId) => api.post(`/core-banking/rd/${rdId}/installment`);
+export const closeRecurringDeposit = (rdId, data = {}) => api.post(`/core-banking/rd/${rdId}/close`, data);
+export const createVpaHandle = (handlePrefix = "") => api.post("/core-banking/upi/vpa", { handlePrefix });
+export const getMyVpaHandles = () => api.get("/core-banking/upi/vpa/my");
+export const createRailTransfer = (data) => api.post("/core-banking/rails/transfer", data);
+export const getSettlementRecords = (params = {}) => api.get("/core-banking/admin/settlement", { params });
+export const reconcileSettlementRecord = (settlementId, data) =>
+  api.put(`/core-banking/admin/settlement/${settlementId}/reconcile`, data);
+export const runAmlScan = (userId = "") => api.post("/core-banking/admin/aml/scan", { userId });
+export const getAmlAlerts = (params = {}) => api.get("/core-banking/admin/aml/alerts", { params });
+export const requestSipPlan = (data) => api.post("/core-banking/sip/request", data);
+export const getMySipPlans = (params = {}) => api.get("/core-banking/sip/my", { params });
+export const updateMySipPlanStatus = (sipId, status) => api.put(`/core-banking/sip/${sipId}/status`, { status });
+export const paySipInstallment = (sipId) => api.post(`/core-banking/sip/${sipId}/installment`);
+export const getAdminSipRequests = (params = {}) => api.get("/core-banking/admin/sip/requests", { params });
+export const decideSipRequest = (sipId, decision, note = "") =>
+  api.put(`/core-banking/admin/sip/${sipId}/decision`, { decision, note });
+export const runSipAutoDebitJob = (data = {}) => api.post("/core-banking/admin/sip/run-autodebit", data);
 
 export default api;

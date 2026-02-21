@@ -5,8 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:worker": "node worker.js",
     "dev": "nodemon server.js",
-    "email:test": "node scripts/test-email.js"
+    "email:test": "node scripts/test-email.js",
+    "deploy:check": "node scripts/post-deploy-check.js"
   },
   "keywords": [
     "bank",

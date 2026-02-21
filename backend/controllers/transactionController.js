@@ -9,11 +9,14 @@ const LedgerEntry = require("../models/LedgerEntry");
 const Beneficiary = require("../models/Beneficiary");
 const AuditLog = require("../models/AuditLog");
 const StandingInstruction = require("../models/StandingInstruction");
+const ApprovalRequest = require("../models/ApprovalRequest");
 const { verifyTransactionPin } = require("../utils/transactionPin");
 const { sendOtpEmail, isEmailConfigured, getEmailFailureHint } = require("../utils/emailService");
 const { generateOtp, normalizeOtpCode, isValidOtpCode, hashOtpCode } = require("../utils/otpUtils");
 const { getMoneyOutPolicy, getUserDailyTotal } = require("../utils/moneyOutPolicy");
+const { isApprovalRequired } = require("../utils/adminApprovalPolicy");
 const { createNotification, createNotifications } = require("../utils/notificationService");
+const { postCustomerDepositJournal, postCustomerWithdrawalJournal } = require("../utils/coreBanking/glService");
 
 const maskAccountNumber = (value = "") => {
   const account = String(value);
@@ -43,8 +46,17 @@ const inferLegacyLedgerType = (transaction = {}) => {
   const txType = String(transaction.type || "").toUpperCase();
   const desc = String(transaction.description || "").trim();
 
-  if (txType === "DEPOSIT" || txType === "PAYMENT_CREDIT") return "CREDIT";
-  if (txType === "WITHDRAWAL" || txType === "LOAN_PAYMENT" || txType === "PAYMENT_REFUND") return "DEBIT";
+  if (
+    txType === "DEPOSIT" ||
+    txType === "PAYMENT_CREDIT" ||
+    txType === "INTEREST_CREDIT" ||
+    txType === "LOAN_DISBURSAL" ||
+    txType === "FD_CLOSURE" ||
+    txType === "RD_CLOSURE"
+  )
+    return "CREDIT";
+  if (txType === "WITHDRAWAL" || txType === "LOAN_PAYMENT" || txType === "PAYMENT_REFUND" || txType === "FD_BOOKING" || txType === "RD_INSTALLMENT")
+    return "DEBIT";
   if (txType === "TRANSFER") return /^received from/i.test(desc) ? "CREDIT" : "DEBIT";
   return "DEBIT";
 };
@@ -53,9 +65,15 @@ const statementTypeLabel = (transactionType = "", direction = "", description = 
   const txType = String(transactionType || "").toUpperCase();
   if (txType === "DEPOSIT") return "Deposit";
   if (txType === "WITHDRAWAL") return "Withdrawal";
+  if (txType === "LOAN_DISBURSAL") return "Loan Disbursal";
   if (txType === "LOAN_PAYMENT") return "Loan EMI";
   if (txType === "PAYMENT_CREDIT") return "Payment Credit";
   if (txType === "PAYMENT_REFUND") return "Payment Refund";
+  if (txType === "INTEREST_CREDIT") return "Interest Credit";
+  if (txType === "FD_BOOKING") return "FD Booking";
+  if (txType === "FD_CLOSURE") return "FD Closure";
+  if (txType === "RD_INSTALLMENT") return "RD Installment";
+  if (txType === "RD_CLOSURE") return "RD Closure";
   if (txType === "TRANSFER") {
     return direction === "CREDIT" || /^received from/i.test(String(description || "")) ? "Transfer In" : "Transfer Out";
   }
@@ -96,6 +114,17 @@ const getNextInstructionRunAt = ({ fromDate = new Date(), frequency = "MONTHLY" 
   return start.add(1, "month").toDate();
 };
 
+const resolveStandingStartDate = (value) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return dayjs().startOf("day");
+  }
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) {
+    return null;
+  }
+  return parsed.startOf("day");
+};
+
 const resolveTransferErrorStatus = (message = "") => {
   const text = String(message || "").toLowerCase();
   if (text.includes("not found")) return 404;
@@ -110,6 +139,31 @@ const resolveTransferErrorStatus = (message = "") => {
     return 400;
   }
   return 500;
+};
+
+const buildPinFailurePayload = (pinCheck = {}) => ({
+  success: false,
+  message: pinCheck.message || "Transaction PIN verification failed.",
+  ...(pinCheck.attemptsLeft !== undefined ? { attemptsLeft: pinCheck.attemptsLeft } : {}),
+  ...(pinCheck.lockedUntil ? { lockedUntil: pinCheck.lockedUntil } : {}),
+});
+
+const parsePositiveInt = (value, fallback, { min = 1, max = 500 } = {}) => {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const parseDateOrNull = (value, { endOfDay = false } = {}) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  let date = null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    date = new Date(`${raw}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+  } else {
+    date = new Date(raw);
+  }
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const executeStandingInstructionTransfer = async ({
@@ -604,13 +658,41 @@ exports.getMyTransactions = async (req, res) => {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
 
-    const transactions = await Transaction.find({ accountId: account._id })
-      .populate("recipientAccountId", "accountNumber")
-      .sort({ createdAt: -1 });
+    const page = parsePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
+    const limit = parsePositiveInt(req.query.limit, 200, { min: 1, max: 500 });
+    const skip = (page - 1) * limit;
+    const type = String(req.query.type || "").trim().toUpperCase();
+    const fromDate = parseDateOrNull(req.query.from, { endOfDay: false });
+    const toDate = parseDateOrNull(req.query.to, { endOfDay: true });
+
+    const filter = { accountId: account._id };
+    if (type) {
+      filter.type = type;
+    }
+    if (fromDate || toDate) {
+      filter.createdAt = {};
+      if (fromDate) filter.createdAt.$gte = fromDate;
+      if (toDate) filter.createdAt.$lte = toDate;
+    }
+
+    const [transactions, totalTransactions] = await Promise.all([
+      Transaction.find(filter)
+        .populate("recipientAccountId", "accountNumber")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Transaction.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(totalTransactions / limit));
 
     res.status(200).json({
       success: true,
-      totalTransactions: transactions.length,
+      totalTransactions,
+      page,
+      limit,
+      totalPages,
+      hasMore: page < totalPages,
       transactions,
     });
   } catch (error) {
@@ -621,14 +703,50 @@ exports.getMyTransactions = async (req, res) => {
 // Get all transactions (Admin)
 exports.getAllTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find()
-      .populate("userId", "firstName lastName email")
-      .populate("accountId", "accountNumber")
-      .sort({ createdAt: -1 });
+    const page = parsePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
+    const limit = parsePositiveInt(req.query.limit, 200, { min: 1, max: 500 });
+    const skip = (page - 1) * limit;
+    const type = String(req.query.type || "").trim().toUpperCase();
+    const userId = String(req.query.userId || "").trim();
+    const accountId = String(req.query.accountId || "").trim();
+    const fromDate = parseDateOrNull(req.query.from, { endOfDay: false });
+    const toDate = parseDateOrNull(req.query.to, { endOfDay: true });
+
+    const filter = {};
+    if (type) {
+      filter.type = type;
+    }
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      filter.userId = userId;
+    }
+    if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
+      filter.accountId = accountId;
+    }
+    if (fromDate || toDate) {
+      filter.createdAt = {};
+      if (fromDate) filter.createdAt.$gte = fromDate;
+      if (toDate) filter.createdAt.$lte = toDate;
+    }
+
+    const [transactions, totalTransactions] = await Promise.all([
+      Transaction.find(filter)
+        .populate("userId", "firstName lastName email")
+        .populate("accountId", "accountNumber")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Transaction.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(totalTransactions / limit));
 
     res.status(200).json({
       success: true,
-      totalTransactions: transactions.length,
+      totalTransactions,
+      page,
+      limit,
+      totalPages,
+      hasMore: page < totalPages,
       transactions,
     });
   } catch (error) {
@@ -701,6 +819,18 @@ exports.deposit = async (req, res) => {
         type: "SUCCESS",
         actionLink: "/transactions",
         metadata: { transactionId: transaction._id, amount },
+      });
+    } catch (_) {}
+    try {
+      await postCustomerDepositJournal({
+        amount: Number(amount || 0),
+        referenceType: "DEPOSIT",
+        referenceId: transaction._id,
+        metadata: {
+          userId: req.userId,
+          accountId: account._id,
+          accountNumber: account.accountNumber,
+        },
       });
     } catch (_) {}
 
@@ -823,6 +953,18 @@ exports.withdraw = async (req, res) => {
         metadata: { transactionId: transaction._id, amount: withdrawalAmount },
       });
     } catch (_) {}
+    try {
+      await postCustomerWithdrawalJournal({
+        amount: Number(withdrawalAmount || 0),
+        referenceType: "WITHDRAWAL",
+        referenceId: transaction._id,
+        metadata: {
+          userId: req.userId,
+          accountId: account._id,
+          accountNumber: account.accountNumber,
+        },
+      });
+    } catch (_) {}
 
     res.status(201).json({
       success: true,
@@ -928,13 +1070,34 @@ exports.requestTransferOtp = async (req, res) => {
     const { recipientAccountNumber, amount } = req.body;
     const normalizedRecipientAccountNumber = normalizeAccountNumber(recipientAccountNumber);
     const transferAmount = Number(amount);
+    const normalizedAmount = Number(Number(amount).toFixed(2));
     const policy = getMoneyOutPolicy();
 
     if (!normalizedRecipientAccountNumber || !Number.isFinite(transferAmount) || transferAmount <= 0) {
       return res.status(400).json({ success: false, message: "Invalid transfer request." });
     }
 
-    const highValueTransfer = transferAmount >= policy.highValueTransferThreshold;
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid transfer amount." });
+    }
+
+    if (normalizedAmount > policy.maxSingleTransfer) {
+      return res.status(400).json({
+        success: false,
+        message: `Single transfer limit is ${formatRupee(policy.maxSingleTransfer)}.`,
+      });
+    }
+
+    const todayTransfer = await getUserDailyTotal({ userId: req.userId, type: "TRANSFER" });
+    if (todayTransfer + normalizedAmount > policy.dailyTransferLimit) {
+      const remaining = Math.max(0, policy.dailyTransferLimit - todayTransfer);
+      return res.status(400).json({
+        success: false,
+        message: `Daily transfer limit exceeded. Remaining today: ${formatRupee(remaining)}.`,
+      });
+    }
+
+    const highValueTransfer = normalizedAmount >= policy.highValueTransferThreshold;
     if (!policy.requireTransferOtpForHighValue || !highValueTransfer) {
       return res.status(200).json({
         success: true,
@@ -964,7 +1127,7 @@ exports.requestTransferOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Cannot transfer to the same account." });
     }
 
-    if (senderAccount.balance < transferAmount) {
+    if (senderAccount.balance < normalizedAmount) {
       return res.status(400).json({ success: false, message: "Insufficient balance for this transfer." });
     }
 
@@ -977,7 +1140,20 @@ exports.requestTransferOtp = async (req, res) => {
       return res.status(400).json({ success: false, message: "Recipient account is not active." });
     }
 
-    const normalizedAmount = Number(transferAmount.toFixed(2));
+    if (policy.requireVerifiedBeneficiary) {
+      const beneficiary = await Beneficiary.findOne({
+        userId: req.userId,
+        accountNumber: normalizedRecipientAccountNumber,
+        verified: true,
+      });
+      if (!beneficiary) {
+        return res.status(403).json({
+          success: false,
+          message: "Recipient not verified. Please add and verify beneficiary first.",
+        });
+      }
+    }
+
     const existingOtp = await Otp.findOne({
       userId: req.userId,
       purpose: "TRANSFER_VERIFY",
@@ -1070,6 +1246,7 @@ exports.transfer = async (req, res) => {
   const normalizedRecipientAccountNumber = normalizeAccountNumber(recipientAccountNumber);
   const transferAmount = Number(amount);
   const normalizedOtpCode = normalizeOtpCode(otpCode);
+  const transferDescription = String(description || "").trim().slice(0, 240);
 
   if (!normalizedRecipientAccountNumber || !Number.isFinite(transferAmount) || transferAmount <= 0) {
     return res.status(400).json({ success: false, message: "Invalid input" });
@@ -1077,7 +1254,7 @@ exports.transfer = async (req, res) => {
 
   const pinCheck = await verifyTransactionPin({ userId: req.userId, pin: transactionPin });
   if (!pinCheck.success) {
-    return res.status(pinCheck.status).json({ success: false, message: pinCheck.message });
+    return res.status(pinCheck.status).json(buildPinFailurePayload(pinCheck));
   }
 
   const senderUser = pinCheck.user;
@@ -1223,6 +1400,115 @@ exports.transfer = async (req, res) => {
 
     // Get recipient user details
     const recipientUser = await User.findById(recipientAccount.userId).session(session);
+    const recipientName = `${recipientUser?.firstName || ""} ${recipientUser?.lastName || ""}`.trim();
+    const normalizedTransferAmount = Number(transferAmount.toFixed(2));
+
+    if (highValueTransfer && isApprovalRequired("TRANSFER_EXECUTION")) {
+      const existingRequest = await ApprovalRequest.findOne({
+        actionType: "TRANSFER_EXECUTION",
+        targetType: "TRANSFER",
+        targetId: senderAccount._id,
+        requestedBy: req.userId,
+        status: "PENDING",
+        "payload.recipientAccountNumber": normalizedRecipientAccountNumber,
+        "payload.amount": normalizedTransferAmount,
+      }).session(session);
+
+      if (existingRequest) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(202).json({
+          success: true,
+          pendingApproval: true,
+          message: "A transfer approval request is already pending for this recipient and amount.",
+          approvalRequest: existingRequest,
+          approvalRequestId: existingRequest._id,
+          amount: normalizedTransferAmount,
+          recipientName,
+          recipientAccountMasked: maskAccountNumber(normalizedRecipientAccountNumber),
+          recipientAccountNumber: normalizedRecipientAccountNumber,
+        });
+      }
+
+      const [approvalRequest] = await ApprovalRequest.create(
+        [
+          {
+            actionType: "TRANSFER_EXECUTION",
+            targetType: "TRANSFER",
+            targetId: senderAccount._id,
+            payload: {
+              senderUserId: req.userId,
+              senderAccountId: senderAccount._id,
+              senderAccountNumber: senderAccount.accountNumber,
+              recipientAccountId: recipientAccount._id,
+              recipientUserId: recipientAccount.userId,
+              recipientAccountNumber: normalizedRecipientAccountNumber,
+              recipientName,
+              amount: normalizedTransferAmount,
+              description: transferDescription || "Transfer",
+              highValueTransfer: true,
+              otpSessionId: otpSessionId || "",
+            },
+            requestNote: `High-value transfer request for ${formatRupee(normalizedTransferAmount)} to ${maskAccountNumber(
+              normalizedRecipientAccountNumber
+            )}`,
+            requestedBy: req.userId,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      try {
+        await createNotification({
+          userId: req.userId,
+          title: "Transfer Request Submitted",
+          message: `${formatRupee(normalizedTransferAmount)} transfer to ${maskAccountNumber(
+            normalizedRecipientAccountNumber
+          )} is pending admin approval.`,
+          category: "TRANSACTION",
+          type: "INFO",
+          actionLink: "/core-banking?module=approvals",
+          metadata: {
+            approvalRequestId: approvalRequest._id,
+            actionType: "TRANSFER_EXECUTION",
+            amount: normalizedTransferAmount,
+            recipientAccountNumber: normalizedRecipientAccountNumber,
+          },
+        });
+      } catch (_) {}
+
+      try {
+        await AuditLog.create({
+          userId: req.userId,
+          action: "TRANSFER_APPROVAL_REQUEST_CREATED",
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"] || "",
+          metadata: {
+            approvalRequestId: approvalRequest._id,
+            actionType: approvalRequest.actionType,
+            targetType: approvalRequest.targetType,
+            targetId: approvalRequest.targetId,
+            amount: normalizedTransferAmount,
+            recipientAccountNumber: normalizedRecipientAccountNumber,
+          },
+        });
+      } catch (_) {}
+
+      return res.status(202).json({
+        success: true,
+        pendingApproval: true,
+        message: "Transfer request submitted for admin approval.",
+        approvalRequest,
+        approvalRequestId: approvalRequest._id,
+        amount: normalizedTransferAmount,
+        recipientName,
+        recipientAccountMasked: maskAccountNumber(normalizedRecipientAccountNumber),
+        recipientAccountNumber: normalizedRecipientAccountNumber,
+      });
+    }
 
     // Deduct from sender
     senderAccount.balance -= transferAmount;
@@ -1238,10 +1524,10 @@ exports.transfer = async (req, res) => {
       req.userId,
       "TRANSFER",
       transferAmount,
-      description || "Transfer",
+      transferDescription || "Transfer",
       senderAccount.balance,
       recipientAccount._id,
-      `${recipientUser.firstName} ${recipientUser.lastName}`,
+      recipientName,
       session
     );
 
@@ -1267,7 +1553,7 @@ exports.transfer = async (req, res) => {
         type: "DEBIT",
         amount: transferAmount,
         balanceAfter: senderAccount.balance,
-        description: description || `Transfer to ${recipientAccount.accountNumber}`,
+        description: transferDescription || `Transfer to ${recipientAccount.accountNumber}`,
       },
       {
         accountId: recipientAccount._id,
@@ -1311,7 +1597,7 @@ exports.transfer = async (req, res) => {
       success: true,
       message: "Transfer successful",
       senderNewBalance: senderAccount.balance,
-      recipientName: `${recipientUser.firstName} ${recipientUser.lastName}`,
+      recipientName,
       recipientAccountMasked: maskAccountNumber(recipientAccount.accountNumber),
       senderTransactionId: senderTx._id,
     });
@@ -1334,6 +1620,212 @@ exports.transfer = async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.executeApprovedTransferExecution = async ({ approvalRequest, reviewerId, ipAddress = "", userAgent = "" }) => {
+  if (!approvalRequest) {
+    throw new Error("Approval request context is required for transfer execution.");
+  }
+
+  const payload = approvalRequest.payload || {};
+  const senderUserId = String(payload.senderUserId || approvalRequest.requestedBy || "").trim();
+  const senderAccountId = String(payload.senderAccountId || approvalRequest.targetId || "").trim();
+  const normalizedRecipientAccountNumber = normalizeAccountNumber(payload.recipientAccountNumber);
+  const transferAmount = Number(payload.amount);
+  const transferDescription = String(payload.description || "Transfer").trim().slice(0, 240);
+
+  if (!senderUserId || !senderAccountId || !normalizedRecipientAccountNumber) {
+    throw new Error("Invalid transfer approval payload.");
+  }
+
+  if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
+    throw new Error("Invalid transfer approval amount.");
+  }
+
+  const policy = getMoneyOutPolicy();
+  if (transferAmount > policy.maxSingleTransfer) {
+    throw new Error(`Single transfer limit is ${formatRupee(policy.maxSingleTransfer)}.`);
+  }
+
+  const todayTransfer = await getUserDailyTotal({ userId: senderUserId, type: "TRANSFER" });
+  if (todayTransfer + transferAmount > policy.dailyTransferLimit) {
+    const remaining = Math.max(0, policy.dailyTransferLimit - todayTransfer);
+    throw new Error(`Daily transfer limit exceeded. Remaining today: ${formatRupee(remaining)}.`);
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const senderAccount = await Account.findById(senderAccountId).session(session);
+    if (!senderAccount) {
+      throw new Error("Sender account not found.");
+    }
+
+    if (String(senderAccount.userId || "") !== senderUserId) {
+      throw new Error("Transfer approval payload does not match sender account owner.");
+    }
+
+    if (senderAccount.status !== "ACTIVE") {
+      throw new Error("Sender account is not active.");
+    }
+
+    if (senderAccount.accountNumber === normalizedRecipientAccountNumber) {
+      throw new Error("Cannot transfer to the same account.");
+    }
+
+    if (senderAccount.balance < transferAmount) {
+      throw new Error("Insufficient balance for this transfer.");
+    }
+
+    if (policy.requireVerifiedBeneficiary) {
+      const beneficiary = await Beneficiary.findOne({
+        userId: senderUserId,
+        accountNumber: normalizedRecipientAccountNumber,
+        verified: true,
+      }).session(session);
+      if (!beneficiary) {
+        throw new Error("Recipient not verified. Please add and verify beneficiary first.");
+      }
+    }
+
+    const recipientAccount = await Account.findOne({ accountNumber: normalizedRecipientAccountNumber }).session(session);
+    if (!recipientAccount) {
+      throw new Error("Recipient account not found.");
+    }
+
+    if (recipientAccount.status !== "ACTIVE") {
+      throw new Error("Recipient account is not active.");
+    }
+
+    const senderUser = await User.findById(senderUserId).session(session);
+    const recipientUser = await User.findById(recipientAccount.userId).session(session);
+    const senderDisplayName = `${senderUser?.firstName || ""} ${senderUser?.lastName || ""}`.trim();
+    const recipientDisplayName = `${recipientUser?.firstName || ""} ${recipientUser?.lastName || ""}`.trim();
+
+    senderAccount.balance -= transferAmount;
+    recipientAccount.balance += transferAmount;
+    await senderAccount.save({ session });
+    await recipientAccount.save({ session });
+
+    const senderTx = await createTransaction(
+      senderAccount._id,
+      senderUserId,
+      "TRANSFER",
+      transferAmount,
+      transferDescription || "Transfer",
+      senderAccount.balance,
+      recipientAccount._id,
+      recipientDisplayName,
+      session
+    );
+
+    const recipientTx = await createTransaction(
+      recipientAccount._id,
+      recipientAccount.userId,
+      "TRANSFER",
+      transferAmount,
+      `Received from ${senderDisplayName}`,
+      recipientAccount.balance,
+      senderAccount._id,
+      senderDisplayName,
+      session
+    );
+
+    await LedgerEntry.create(
+      [
+        {
+          accountId: senderAccount._id,
+          transactionId: senderTx._id,
+          type: "DEBIT",
+          amount: transferAmount,
+          balanceAfter: senderAccount.balance,
+          description: transferDescription || `Transfer to ${recipientAccount.accountNumber}`,
+        },
+        {
+          accountId: recipientAccount._id,
+          transactionId: recipientTx._id,
+          type: "CREDIT",
+          amount: transferAmount,
+          balanceAfter: recipientAccount.balance,
+          description: `Received from ${senderDisplayName}`,
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    try {
+      await createNotifications([
+        {
+          userId: senderUserId,
+          title: "Transfer Successful",
+          message: `${formatRupee(transferAmount)} sent to ${maskAccountNumber(recipientAccount.accountNumber)}. Balance: ${formatRupee(
+            senderAccount.balance
+          )}.`,
+          category: "TRANSACTION",
+          type: "SUCCESS",
+          actionLink: "/transactions",
+          metadata: {
+            transactionId: senderTx._id,
+            recipientAccountNumber: recipientAccount.accountNumber,
+            amount: transferAmount,
+            approvalRequestId: approvalRequest._id,
+          },
+        },
+        {
+          userId: recipientAccount.userId,
+          title: "Amount Received",
+          message: `${formatRupee(transferAmount)} received from ${senderDisplayName || "BankIndia customer"}.`,
+          category: "TRANSACTION",
+          type: "INFO",
+          actionLink: "/transactions",
+          metadata: {
+            transactionId: recipientTx._id,
+            senderAccountNumber: senderAccount.accountNumber,
+            amount: transferAmount,
+            approvalRequestId: approvalRequest._id,
+          },
+        },
+      ]);
+    } catch (_) {}
+
+    try {
+      await AuditLog.create({
+        userId: reviewerId,
+        action: "TRANSFER_APPROVAL_EXECUTED",
+        ipAddress,
+        userAgent,
+        metadata: {
+          approvalRequestId: approvalRequest._id,
+          amount: transferAmount,
+          to: normalizedRecipientAccountNumber,
+          fromAccountId: senderAccount._id,
+          senderTransactionId: senderTx._id,
+          recipientTransactionId: recipientTx._id,
+        },
+      });
+    } catch (_) {}
+
+    return {
+      executed: true,
+      result: {
+        senderNewBalance: senderAccount.balance,
+        recipientName: recipientDisplayName,
+        recipientAccountMasked: maskAccountNumber(recipientAccount.accountNumber),
+        senderTransactionId: senderTx._id,
+        recipientTransactionId: recipientTx._id,
+        amount: transferAmount,
+      },
+      message: "Transfer request approved and executed successfully.",
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
   }
 };
 
@@ -1364,14 +1856,23 @@ exports.createStandingInstruction = async (req, res) => {
     const { recipientAccountNumber, amount, frequency, description, startDate, maxExecutions, transactionPin } = req.body;
     const normalizedRecipientAccountNumber = normalizeAccountNumber(recipientAccountNumber);
     const transferAmount = Number(amount);
+    const hasMaxExecutionsInput =
+      !(maxExecutions === undefined || maxExecutions === null || String(maxExecutions).trim() === "");
+    const parsedMaxExecutions = hasMaxExecutionsInput ? Number(maxExecutions) : 10;
 
     if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
       return res.status(400).json({ success: false, message: "Invalid transfer amount." });
     }
+    if (!Number.isInteger(parsedMaxExecutions) || parsedMaxExecutions < 1 || parsedMaxExecutions > 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Max runs must be an integer between 1 and 10.",
+      });
+    }
 
     const pinCheck = await verifyTransactionPin({ userId: req.userId, pin: transactionPin });
     if (!pinCheck.success) {
-      return res.status(pinCheck.status).json({ success: false, message: pinCheck.message });
+      return res.status(pinCheck.status).json(buildPinFailurePayload(pinCheck));
     }
 
     const senderAccount = await Account.findOne({ userId: req.userId });
@@ -1409,11 +1910,12 @@ exports.createStandingInstruction = async (req, res) => {
       });
     }
 
-    const startAt = startDate ? dayjs(startDate) : dayjs();
-    if (!startAt.isValid()) {
+    const startAt = resolveStandingStartDate(startDate);
+    if (!startAt || !startAt.isValid()) {
       return res.status(400).json({ success: false, message: "Invalid start date." });
     }
     const now = dayjs();
+    const scheduleBackdated = startAt.isBefore(now.startOf("day"));
     const firstRunAt = startAt.isBefore(now) ? now.toDate() : startAt.toDate();
 
     const recipientName = `${recipientAccount.userId?.firstName || ""} ${recipientAccount.userId?.lastName || ""}`.trim();
@@ -1424,10 +1926,11 @@ exports.createStandingInstruction = async (req, res) => {
       recipientName,
       amount: transferAmount,
       frequency,
+      startDate: startAt.toDate(),
       description: String(description || "").trim(),
       status: "ACTIVE",
       nextRunAt: firstRunAt,
-      maxExecutions: Number(maxExecutions || 0),
+      maxExecutions: parsedMaxExecutions,
       lastExecutionStatus: "PENDING",
     });
 
@@ -1437,11 +1940,18 @@ exports.createStandingInstruction = async (req, res) => {
         title: "Standing Instruction Created",
         message: `${formatRupee(transferAmount)} scheduled as ${frequency.toLowerCase()} transfer to ${maskAccountNumber(
           normalizedRecipientAccountNumber
-        )}.`,
+        )}.${scheduleBackdated ? " Start date was in the past, so first run is queued now." : ""}`,
         category: "TRANSACTION",
         type: "SUCCESS",
         actionLink: "/transactions",
-        metadata: { instructionId: instruction._id, frequency, nextRunAt: instruction.nextRunAt },
+        metadata: {
+          instructionId: instruction._id,
+          frequency,
+          nextRunAt: instruction.nextRunAt,
+          startDate: instruction.startDate,
+          maxExecutions: parsedMaxExecutions,
+          scheduleBackdated,
+        },
       });
     } catch (_) {}
 
@@ -1456,13 +1966,18 @@ exports.createStandingInstruction = async (req, res) => {
           amount: transferAmount,
           recipientAccountNumber: normalizedRecipientAccountNumber,
           frequency,
+          startDate: instruction.startDate,
+          maxExecutions: parsedMaxExecutions,
+          scheduleBackdated,
         },
       });
     } catch (_) {}
 
     return res.status(201).json({
       success: true,
-      message: "Standing instruction created successfully.",
+      message: scheduleBackdated
+        ? "Standing instruction created. Start date was in the past, so first run is queued now."
+        : "Standing instruction created successfully.",
       instruction,
     });
   } catch (error) {
@@ -1526,7 +2041,7 @@ exports.executeStandingInstructionNow = async (req, res) => {
 
     const pinCheck = await verifyTransactionPin({ userId: req.userId, pin: transactionPin });
     if (!pinCheck.success) {
-      return res.status(pinCheck.status).json({ success: false, message: pinCheck.message });
+      return res.status(pinCheck.status).json(buildPinFailurePayload(pinCheck));
     }
 
     const lockedInstruction = await StandingInstruction.findOneAndUpdate(
@@ -1620,7 +2135,7 @@ exports.extendStandingInstruction = async (req, res) => {
 
     const mpinCheck = await verifyTransactionPin({ userId: req.userId, pin: mpin });
     if (!mpinCheck.success) {
-      return res.status(mpinCheck.status).json({ success: false, message: "MPIN verification failed." });
+      return res.status(mpinCheck.status).json(buildPinFailurePayload(mpinCheck));
     }
 
     const instruction = await StandingInstruction.findOne({ _id: instructionId, userId: req.userId });

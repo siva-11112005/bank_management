@@ -54,6 +54,12 @@ const moneyOutLimiter = buildLimiter({
   message: "Too many transfer or withdrawal requests. Please try again later.",
 });
 
+const recipientLookupLimiter = buildLimiter({
+  windowMinutes: process.env.RECIPIENT_LOOKUP_RATE_LIMIT_WINDOW_MINUTES || 15,
+  max: process.env.RECIPIENT_LOOKUP_RATE_LIMIT_MAX || 90,
+  message: "Too many recipient verification requests. Please try again shortly.",
+});
+
 const paymentWriteLimiter = buildLimiter({
   windowMinutes: process.env.PAYMENT_WRITE_RATE_LIMIT_WINDOW_MINUTES || 15,
   max: process.env.PAYMENT_WRITE_RATE_LIMIT_MAX || 100,
@@ -67,5 +73,6 @@ module.exports = {
   authRegisterLimiter,
   otpRequestLimiter,
   moneyOutLimiter,
+  recipientLookupLimiter,
   paymentWriteLimiter,
 };

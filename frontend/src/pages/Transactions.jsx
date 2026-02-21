@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   getMyTransactions,
@@ -25,62 +25,69 @@ const typeToLabel = {
   DEPOSIT: "Deposit",
   WITHDRAWAL: "Withdrawal",
   TRANSFER: "Transfer",
+  LOAN_DISBURSAL: "Loan Disbursal",
   LOAN_PAYMENT: "Loan Payment",
   PAYMENT_CREDIT: "Payment Credit",
   PAYMENT_REFUND: "Payment Refund",
+  INTEREST_CREDIT: "Interest Credit",
+  FD_BOOKING: "FD Booking",
+  FD_CLOSURE: "FD Closure",
+  RD_INSTALLMENT: "RD Installment",
+  RD_CLOSURE: "RD Closure",
+  SIP_INSTALLMENT: "SIP Installment",
 };
 
 const typeToClass = {
   DEPOSIT: "deposit",
   WITHDRAWAL: "withdrawal",
   TRANSFER: "transfer",
+  LOAN_DISBURSAL: "deposit",
   LOAN_PAYMENT: "loan",
   PAYMENT_CREDIT: "deposit",
   PAYMENT_REFUND: "withdrawal",
+  INTEREST_CREDIT: "deposit",
+  FD_BOOKING: "withdrawal",
+  FD_CLOSURE: "deposit",
+  RD_INSTALLMENT: "withdrawal",
+  RD_CLOSURE: "deposit",
+  SIP_INSTALLMENT: "withdrawal",
 };
 
 const quickAmounts = [1000, 5000, 10000];
 const formatRupee = (value) => `Rs ${Number(value || 0).toFixed(2)}`;
 const standingFrequencies = ["DAILY", "WEEKLY", "MONTHLY"];
 const normalizeAccountNumber = (value = "") => String(value || "").replace(/\s+/g, "").toUpperCase();
+const toDateInputValue = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const getPreviousMonthSameDayInput = () => {
+  const now = new Date();
+  const previousMonthIndex = now.getMonth() - 1;
+  const year = previousMonthIndex < 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const monthIndex = (previousMonthIndex + 12) % 12;
+  const lastDayOfMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const day = Math.min(now.getDate(), lastDayOfMonth);
+  return toDateInputValue(new Date(year, monthIndex, day));
+};
 const PENDING_TRANSFER_STORAGE_KEY = "pendingTransferDraft";
-
-const normalizeDateInput = (value = "") => {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
-    const [day, month, year] = raw.split("-");
-    return `${year}-${month}-${day}`;
-  }
-  return raw;
-};
-
-const toIsoStartOfDay = (value = "") => {
-  const raw = normalizeDateInput(value);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
-
-  const [yearText, monthText, dayText] = raw.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return "";
-  if (year < 1900 || year > 2100) return "";
-  if (month < 1 || month > 12) return "";
-  if (day < 1 || day > 31) return "";
-
-  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-  const isSameDate =
-    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-
-  if (!isSameDate) return "";
-  return date.toISOString();
-};
 
 const Transactions = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState([]);
+  const [transactionsRefreshing, setTransactionsRefreshing] = useState(false);
+  const [transactionPage, setTransactionPage] = useState(1);
+  const [transactionLimit, setTransactionLimit] = useState(20);
+  const [transactionTotalPages, setTransactionTotalPages] = useState(1);
+  const [transactionTotalCount, setTransactionTotalCount] = useState(0);
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState("");
+  const [transactionFromDate, setTransactionFromDate] = useState("");
+  const [transactionToDate, setTransactionToDate] = useState("");
+  const [transactionsReloadKey, setTransactionsReloadKey] = useState(0);
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -150,6 +157,52 @@ const Transactions = () => {
     Boolean(securityRules?.requireTransferOtpForHighValue) &&
     Number.isFinite(transferAmount) &&
     transferAmount >= Number(securityRules?.highValueTransferThreshold || 0);
+  const isOtpReadyForTransfer =
+    !highValueOtpRequired || (Boolean(formData.otpSessionId) && /^\d{6}$/.test(String(formData.otpCode || "")));
+
+  const handleResolveRecipient = useCallback(async (accountNumber, options = {}) => {
+    const normalizedAccount = normalizeAccountNumber(accountNumber);
+    if (!normalizedAccount) return;
+    if (!options.silentMessage) {
+      setMessage({ type: "", text: "" });
+    }
+    setResolvingRecipient(true);
+    setRecipientPreview(null);
+    setRecipientConfirmed(false);
+    try {
+      const response = await resolveRecipient({ accountNumber: normalizedAccount });
+      if (response.data.success) {
+        const responseRecipient = response.data.recipient || {};
+        const isSavedBeneficiary = beneficiaries.some(
+          (entry) => normalizeAccountNumber(entry.accountNumber) === normalizedAccount
+        );
+        const recipient = {
+          ...responseRecipient,
+          accountNumber: normalizeAccountNumber(responseRecipient.accountNumber || normalizedAccount),
+          accountNumberMasked: responseRecipient.accountNumberMasked || normalizedAccount,
+        };
+        setFormData((current) => ({
+          ...current,
+          beneficiaryAccountNumber: isSavedBeneficiary ? normalizedAccount : "",
+          recipientAccountNumber: normalizedAccount,
+          otpSessionId: "",
+          otpCode: "",
+        }));
+        setRecipientPreview(recipient);
+        if (!options.silentMessage) {
+          const verifiedName = recipient.fullName || "Recipient";
+          setMessage({
+            type: "success",
+            text: `Recipient details found: ${verifiedName}. You can proceed with MPIN.`,
+          });
+        }
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.response?.data?.message || "Unable to verify recipient." });
+    } finally {
+      setResolvingRecipient(false);
+    }
+  }, [beneficiaries]);
 
   useEffect(() => {
     if (isStandingInstructionSecurePage) {
@@ -198,20 +251,72 @@ const Transactions = () => {
     setRecipientConfirmed(false);
     setOtpExpiresAt("");
     handleResolveRecipient(recipient, { silentMessage: true });
-  }, [isQuickTransferPage, location.search]);
+  }, [handleResolveRecipient, isQuickTransferPage, location.search]);
 
   useEffect(() => {
     const result = location.state?.transferResult;
     if (!isQuickTransferPage || !result) return;
     setTransferResult(result);
-  }, [isQuickTransferPage, location.state]);
+    setMessage({
+      type: result.pendingApproval ? "success" : "success",
+      text: result.pendingApproval
+        ? result.statusMessage || "Transfer request submitted and pending admin approval."
+        : "Transfer completed successfully.",
+    });
+    triggerTransactionsReload();
+    fetchTransactionSecurity();
+    fetchBeneficiaries();
+    fetchStandingInstructions();
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [isQuickTransferPage, location.state, location.pathname, location.search, navigate]);
 
   useEffect(() => {
-    fetchTransactions();
     fetchBeneficiaries();
     fetchTransactionSecurity();
     fetchStandingInstructions();
   }, []);
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setTransactionsRefreshing(true);
+      try {
+        const params = {
+          page: transactionPage,
+          limit: transactionLimit,
+        };
+        if (transactionTypeFilter) params.type = transactionTypeFilter;
+        if (transactionFromDate) params.from = transactionFromDate;
+        if (transactionToDate) params.to = transactionToDate;
+
+        const response = await getMyTransactions(params);
+        if (response.data.success) {
+          const nextTransactions = response.data.transactions || [];
+          const nextTotalPages = Number(response.data.totalPages || 1);
+          const nextPage = Number(response.data.page || 1);
+          setTransactions(nextTransactions);
+          setTransactionTotalPages(nextTotalPages);
+          setTransactionTotalCount(Number(response.data.totalTransactions || nextTransactions.length));
+          if (nextPage > nextTotalPages) {
+            setTransactionPage(nextTotalPages);
+          }
+        }
+      } catch (error) {
+        setMessage({ type: "error", text: error.response?.data?.message || "Failed to fetch transactions" });
+      } finally {
+        setTransactionsRefreshing(false);
+        setLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, [
+    transactionPage,
+    transactionLimit,
+    transactionTypeFilter,
+    transactionFromDate,
+    transactionToDate,
+    transactionsReloadKey,
+  ]);
 
   const fetchTransactionSecurity = async () => {
     try {
@@ -227,17 +332,8 @@ const Transactions = () => {
     } catch (_) {}
   };
 
-  const fetchTransactions = async () => {
-    try {
-      const response = await getMyTransactions();
-      if (response.data.success) {
-        setTransactions(response.data.transactions || []);
-      }
-    } catch (error) {
-      setMessage({ type: "error", text: error.response?.data?.message || "Failed to fetch transactions" });
-    } finally {
-      setLoading(false);
-    }
+  const triggerTransactionsReload = () => {
+    setTransactionsReloadKey((current) => current + 1);
   };
 
   const fetchBeneficiaries = async () => {
@@ -288,11 +384,13 @@ const Transactions = () => {
       startDate: "",
       maxExecutions: "",
       transactionPin: "",
+      isEncrypting: false,
     });
     navigate("/transactions");
   };
 
-  const handleStandingInstructionMpinChange = (value) => {
+  const handleStandingInstructionMpinChange = (input) => {
+    const value = typeof input === "string" ? input : input?.target?.value || "";
     if (!/^\d*$/.test(value) || value.length > 4) return;
     setStandingForm((current) => ({ ...current, transactionPin: value }));
   };
@@ -358,13 +456,9 @@ const Transactions = () => {
       };
       const response = await addBeneficiary(payload);
       if (response.data.success) {
-        const fallbackOtpCopy =
-          response.data.fallbackOtpMode && response.data.devOtpCode
-            ? ` Fallback OTP: ${response.data.devOtpCode}`
-            : "";
         setMessage({
           type: "success",
-          text: `${response.data.message || "Beneficiary added. Verify using OTP."}${fallbackOtpCopy}`,
+          text: response.data.message || "Beneficiary added. Verify using OTP.",
         });
         setBeneficiaryForm({ name: "", accountNumber: "", ifscCode: "" });
         setBeneficiaryVerification({
@@ -410,11 +504,7 @@ const Transactions = () => {
     try {
       const response = await resendBeneficiaryOtp(beneficiaryId);
       if (response.data.success) {
-        const fallbackOtpCopy =
-          response.data.fallbackOtpMode && response.data.devOtpCode
-            ? ` Fallback OTP: ${response.data.devOtpCode}`
-            : "";
-        setMessage({ type: "success", text: `${response.data.message || "OTP sent successfully."}${fallbackOtpCopy}` });
+        setMessage({ type: "success", text: response.data.message || "OTP sent successfully." });
       }
     } catch (error) {
       setMessage({ type: "error", text: error.response?.data?.message || "Unable to resend OTP." });
@@ -438,47 +528,6 @@ const Transactions = () => {
       setMessage({ type: "error", text: error.response?.data?.message || "Unable to remove beneficiary." });
     } finally {
       setBeneficiaryActionLoading("");
-    }
-  };
-
-  const handleResolveRecipient = async (accountNumber, options = {}) => {
-    const normalizedAccount = normalizeAccountNumber(accountNumber);
-    if (!normalizedAccount) return;
-    if (!options.silentMessage) {
-      setMessage({ type: "", text: "" });
-    }
-    setResolvingRecipient(true);
-    setRecipientPreview(null);
-    setRecipientConfirmed(false);
-    try {
-      const response = await resolveRecipient({ accountNumber: normalizedAccount });
-      if (response.data.success) {
-        const responseRecipient = response.data.recipient || {};
-        const recipient = {
-          ...responseRecipient,
-          accountNumber: normalizeAccountNumber(responseRecipient.accountNumber || normalizedAccount),
-          accountNumberMasked: responseRecipient.accountNumberMasked || normalizedAccount,
-        };
-        setFormData((current) => ({
-          ...current,
-          beneficiaryAccountNumber: current.beneficiaryAccountNumber || normalizedAccount,
-          recipientAccountNumber: normalizedAccount,
-          otpSessionId: "",
-          otpCode: "",
-        }));
-        setRecipientPreview(recipient);
-        if (!options.silentMessage) {
-          const verifiedName = recipient.fullName || "Recipient";
-          setMessage({
-            type: "success",
-            text: `Recipient details found: ${verifiedName}. You can proceed with MPIN.`,
-          });
-        }
-      }
-    } catch (error) {
-      setMessage({ type: "error", text: error.response?.data?.message || "Unable to verify recipient." });
-    } finally {
-      setResolvingRecipient(false);
     }
   };
 
@@ -526,6 +575,14 @@ const Transactions = () => {
       return;
     }
 
+    if (recipientPreview && !recipientConfirmed) {
+      setMessage({
+        type: "error",
+        text: "Confirm recipient name before sending money.",
+      });
+      return;
+    }
+
     if (highValueOtpRequired) {
       if (!formData.otpSessionId || !/^\d{6}$/.test(formData.otpCode)) {
         setMessage({ type: "error", text: "High-value transfer requires valid email OTP verification." });
@@ -567,6 +624,9 @@ const Transactions = () => {
       if (name === "recipientAccountNumber" || name === "amount") {
         next.otpSessionId = "";
         next.otpCode = "";
+      }
+      if (name === "recipientAccountNumber") {
+        next.beneficiaryAccountNumber = "";
       }
       return next;
     });
@@ -622,12 +682,11 @@ const Transactions = () => {
     }));
   };
 
-  const getMinDate = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+  const handleUsePreviousMonthStartDate = () => {
+    setStandingForm((current) => ({
+      ...current,
+      startDate: getPreviousMonthSameDayInput(),
+    }));
   };
 
   const handleCreateStandingInstruction = async (event) => {
@@ -648,9 +707,25 @@ const Transactions = () => {
       setMessage({ type: "error", text: "Enter valid standing instruction amount." });
       return;
     }
-    if (standingForm.maxExecutions && Number(standingForm.maxExecutions) > 10) {
-      setMessage({ type: "error", text: "Maximum executions cannot exceed 10." });
+
+    const parsedMaxExecutions = standingForm.maxExecutions ? Number(standingForm.maxExecutions) : 10;
+    if (!Number.isInteger(parsedMaxExecutions) || parsedMaxExecutions < 1 || parsedMaxExecutions > 10) {
+      setMessage({ type: "error", text: "Max runs must be between 1 and 10." });
       return;
+    }
+
+    let normalizedStartDateIso;
+    let startDateWasInPast = false;
+    if (standingForm.startDate) {
+      const parsedStartDate = new Date(`${standingForm.startDate}T00:00:00`);
+      if (Number.isNaN(parsedStartDate.getTime())) {
+        setMessage({ type: "error", text: "Enter a valid start date." });
+        return;
+      }
+      normalizedStartDateIso = parsedStartDate.toISOString();
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      startDateWasInPast = parsedStartDate.getTime() < todayStart.getTime();
     }
 
     // Navigate to secure page for MPIN entry
@@ -659,8 +734,9 @@ const Transactions = () => {
       amount: amountValue,
       frequency: standingForm.frequency,
       description: standingForm.description,
-      startDate: standingForm.startDate ? new Date(`${standingForm.startDate}T00:00:00`).toISOString() : undefined,
-      maxExecutions: standingForm.maxExecutions ? Number(standingForm.maxExecutions) : undefined,
+      startDate: normalizedStartDateIso,
+      maxExecutions: parsedMaxExecutions,
+      startDateWasInPast,
     };
 
     navigate("/transactions/standing-instruction-secure", {
@@ -702,7 +778,7 @@ const Transactions = () => {
         setMessage({ type: "success", text: response.data.message || "Standing instruction executed." });
         setStandingExecutePins((current) => ({ ...current, [instructionId]: "" }));
         fetchStandingInstructions();
-        fetchTransactions();
+        triggerTransactionsReload();
         fetchTransactionSecurity();
       }
     } catch (error) {
@@ -849,10 +925,6 @@ const Transactions = () => {
         amount: transferAmount,
       });
       if (response.data.success) {
-        const fallbackOtpCopy =
-          response.data.fallbackOtpMode && response.data.devOtpCode
-            ? ` Fallback OTP: ${response.data.devOtpCode}`
-            : "";
         setFormData((current) => ({
           ...current,
           otpSessionId: response.data.otpSessionId || current.otpSessionId,
@@ -861,7 +933,7 @@ const Transactions = () => {
         setOtpExpiresAt(response.data.expiresAt || "");
         setMessage({
           type: "success",
-          text: `${response.data.message || "OTP sent to your registered email."}${fallbackOtpCopy}`,
+          text: response.data.message || "OTP sent to your registered email.",
         });
       }
     } catch (error) {
@@ -931,6 +1003,38 @@ const Transactions = () => {
     } finally {
       setDownloadingStatement(false);
     }
+  };
+
+  const handleTransactionFilterChange = (event) => {
+    const { name, value } = event.target;
+    if (name === "type") {
+      setTransactionTypeFilter(value);
+      setTransactionPage(1);
+      return;
+    }
+    if (name === "from") {
+      setTransactionFromDate(value);
+      setTransactionPage(1);
+      return;
+    }
+    if (name === "to") {
+      setTransactionToDate(value);
+      setTransactionPage(1);
+    }
+  };
+
+  const handleTransactionLimitChange = (event) => {
+    const nextLimit = Number(event.target.value || 20);
+    if (!Number.isFinite(nextLimit) || nextLimit <= 0) return;
+    setTransactionLimit(nextLimit);
+    setTransactionPage(1);
+  };
+
+  const handleClearTransactionFilters = () => {
+    setTransactionTypeFilter("");
+    setTransactionFromDate("");
+    setTransactionToDate("");
+    setTransactionPage(1);
   };
 
   if (loading) {
@@ -1175,20 +1279,24 @@ const Transactions = () => {
               </option>
             ))}
           </select>
-          <input
-            type="date"
-            name="startDate"
-            value={standingForm.startDate}
-            onChange={handleStandingChange}
-            min={getMinDate()}
-            title="Date cannot be in the past"
-          />
+          <div className="standing-start-date-row">
+            <input
+              type="date"
+              name="startDate"
+              value={standingForm.startDate}
+              onChange={handleStandingChange}
+              title="If start date is in the past, first run happens immediately"
+            />
+            <button type="button" className="standing-date-quick-btn" onClick={handleUsePreviousMonthStartDate}>
+              Use Previous Month Date
+            </button>
+          </div>
           <input
             type="text"
             name="maxExecutions"
             value={standingForm.maxExecutions}
             onChange={handleStandingChange}
-            placeholder="Max runs (max 10)"
+            placeholder="Max runs (default 10, max 10)"
             maxLength={2}
           />
           <input
@@ -1202,6 +1310,10 @@ const Transactions = () => {
             {standingSubmitting ? "Creating..." : "Create Instruction"}
           </button>
         </form>
+        <p className="standing-date-help-copy">
+          You can choose a past start date. In that case, the first transfer is queued immediately and then follows
+          the selected frequency.
+        </p>
 
         <div className="standing-list-grid">
           {standingInstructions.length === 0 ? (
@@ -1221,6 +1333,7 @@ const Transactions = () => {
                     <span className={`standing-status status-${String(item.status || "").toLowerCase()}`}>{item.status}</span>
                   </div>
                   <p>Recipient: {item.recipientName || "-"} ({item.recipientAccountNumber})</p>
+                  <p>Start Date: {formatDateTime(item.startDate)}</p>
                   <p>Next Run: {formatDateTime(item.nextRunAt)}</p>
                   <p>Last Run: {formatDateTime(item.lastRunAt)}</p>
                   <p>Executions: {item.executedCount || 0}{item.maxExecutions ? ` / ${item.maxExecutions}` : ""}</p>
@@ -1255,13 +1368,13 @@ const Transactions = () => {
                           className="extend-verify-btn"
                         >
                           {extendForm.isEncrypting
-                            ? "🔒 Encrypting..."
+                            ? "Securely encrypting..."
                             : extendLoading
                             ? "Processing..."
                             : "Verify & Extend"}
                         </button>
                       </div>
-                      <p className="extend-mpin-help">🔒 Enter your encrypted 4-digit MPIN to securely extend</p>
+                      <p className="extend-mpin-help">Enter your encrypted 4-digit MPIN to securely extend</p>
                       <button
                         type="button"
                         className="extend-cancel-inline-btn"
@@ -1336,13 +1449,28 @@ const Transactions = () => {
             <div className="transfer-form-card transfer-form-card-modal">
               {transferResult ? (
                 <div className="transfer-result-card">
-                  <h4>Transfer Successful</h4>
+                  <h4>{transferResult.pendingApproval ? "Transfer Request Submitted" : "Transfer Successful"}</h4>
                   <p><strong>Recipient:</strong> {transferResult.recipientName || "Recipient"}</p>
                   <p><strong>Account:</strong> {transferResult.recipientAccountMasked || "-"}</p>
                   <p><strong>Amount:</strong> {formatRupee(transferResult.amount)}</p>
-                  <p><strong>Available Balance:</strong> {formatRupee(transferResult.senderNewBalance)}</p>
+                  {transferResult.pendingApproval ? (
+                    <p>
+                      <strong>Status:</strong> Pending admin approval
+                    </p>
+                  ) : (
+                    <p><strong>Available Balance:</strong> {formatRupee(transferResult.senderNewBalance)}</p>
+                  )}
                   <p><strong>Time:</strong> {new Date(transferResult.processedAt || new Date()).toLocaleString("en-IN")}</p>
-                  {transferResult.referenceId ? <p><strong>Reference ID:</strong> {transferResult.referenceId}</p> : null}
+                  {transferResult.pendingApproval ? (
+                    transferResult.approvalRequestId ? (
+                      <p><strong>Approval Request ID:</strong> {transferResult.approvalRequestId}</p>
+                    ) : null
+                  ) : transferResult.referenceId ? (
+                    <p><strong>Reference ID:</strong> {transferResult.referenceId}</p>
+                  ) : null}
+                  {transferResult.pendingApproval && transferResult.statusMessage ? (
+                    <p>{transferResult.statusMessage}</p>
+                  ) : null}
                   <div className="transfer-result-actions">
                     <button type="button" onClick={handleSendAgain}>
                       Send Again
@@ -1420,7 +1548,7 @@ const Transactions = () => {
                           onChange={(event) => setRecipientConfirmed(event.target.checked)}
                         />
                         <span>
-                          Optional confirmation: I am sending money to <strong>{recipientPreview.fullName || "this recipient"}</strong> (
+                          Confirmation required: I am sending money to <strong>{recipientPreview.fullName || "this recipient"}</strong> (
                           {recipientPreview.accountNumberMasked || "N/A"}).
                         </span>
                       </label>
@@ -1499,7 +1627,12 @@ const Transactions = () => {
                     <button
                       type="submit"
                       className="btn-primary"
-                      disabled={submitting || !hasTransactionPin}
+                      disabled={
+                        submitting ||
+                        !hasTransactionPin ||
+                        !isOtpReadyForTransfer ||
+                        (Boolean(recipientPreview) && !recipientConfirmed)
+                      }
                     >
                       {submitting ? "Please wait..." : "Send Money"}
                     </button>
@@ -1538,8 +1671,9 @@ const Transactions = () => {
                   {pendingStandingInstruction.startDate && (
                     <p><strong>Start Date:</strong> {new Date(pendingStandingInstruction.startDate).toLocaleDateString("en-IN")}</p>
                   )}
-                  {pendingStandingInstruction.maxExecutions && (
-                    <p><strong>Max Executions:</strong> {pendingStandingInstruction.maxExecutions}</p>
+                  <p><strong>Max Executions:</strong> {pendingStandingInstruction.maxExecutions}</p>
+                  {pendingStandingInstruction.startDateWasInPast && (
+                    <p><strong>Schedule:</strong> Start date is in the past, so first run will be queued now.</p>
                   )}
                   {pendingStandingInstruction.description && (
                     <p><strong>Description:</strong> {pendingStandingInstruction.description}</p>
@@ -1559,12 +1693,12 @@ const Transactions = () => {
                     required
                     autoFocus
                   />
-                  <p className="standing-pin-help">🔒 Enter your encrypted 4-digit MPIN</p>
+                  <p className="standing-pin-help">Enter your encrypted 4-digit MPIN</p>
                 </div>
 
                 {standingForm.isEncrypting && (
                   <div className="form-group" style={{ textAlign: "center" }}>
-                    <p style={{ fontSize: "14px", color: "#0066cc", fontWeight: "500" }}>🔒 Encrypting...</p>
+                    <p style={{ fontSize: "14px", color: "#0066cc", fontWeight: "500" }}>Securely encrypting...</p>
                   </div>
                 )}
 
@@ -1586,18 +1720,59 @@ const Transactions = () => {
         </div>
       )}
 
+      <div className="transaction-filter-panel">
+        <div className="transaction-filter-controls">
+          <select name="type" value={transactionTypeFilter} onChange={handleTransactionFilterChange}>
+            <option value="">All Types</option>
+            {Object.entries(typeToLabel).map(([type, label]) => (
+              <option key={type} value={type}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input type="date" name="from" value={transactionFromDate} onChange={handleTransactionFilterChange} />
+          <input type="date" name="to" value={transactionToDate} onChange={handleTransactionFilterChange} />
+          <select value={transactionLimit} onChange={handleTransactionLimitChange}>
+            <option value={10}>10 / page</option>
+            <option value={20}>20 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+          <button type="button" onClick={handleClearTransactionFilters}>
+            Clear
+          </button>
+        </div>
+        <div className="transaction-filter-summary">
+          <span>Total {transactionTotalCount}</span>
+          {transactionsRefreshing ? <span>Refreshing...</span> : null}
+        </div>
+      </div>
+
       <div className="transactions-content">
         {transactions.length === 0 ? (
           <div className="empty-state">
-            <p>No transactions available.</p>
+            <p>
+              {transactionTypeFilter || transactionFromDate || transactionToDate
+                ? "No transactions found for selected filters."
+                : "No transactions available."}
+            </p>
           </div>
         ) : (
           <div className="transactions-list">
             {transactions.map((transaction) => {
               const normalizedType = transaction.type || "TRANSFER";
-              const typeClass = typeToClass[normalizedType] || "transfer";
               const typeLabel = typeToLabel[normalizedType] || normalizedType;
-              const isOut = normalizedType === "WITHDRAWAL" || normalizedType === "PAYMENT_REFUND";
+              const descriptionText = String(transaction.description || "").trim();
+              const isIncomingTransfer = normalizedType === "TRANSFER" && /^received from/i.test(descriptionText);
+              const isOut =
+                ["WITHDRAWAL", "PAYMENT_REFUND", "LOAN_PAYMENT", "FD_BOOKING", "RD_INSTALLMENT", "SIP_INSTALLMENT"].includes(normalizedType) ||
+                (normalizedType === "TRANSFER" && !isIncomingTransfer);
+              const typeClass =
+                normalizedType === "TRANSFER"
+                  ? isIncomingTransfer
+                    ? "deposit"
+                    : "transfer"
+                  : typeToClass[normalizedType] || "transfer";
 
               return (
                 <div key={transaction._id} className={`transaction-item ${typeClass}`}>
@@ -1610,9 +1785,9 @@ const Transactions = () => {
                   </div>
                   <div className="transaction-amount">
                     <p className={isOut ? "amount-out" : "amount-in"}>
-                      {isOut ? "-" : "+"}Rs {transaction.amount.toFixed(2)}
+                      {isOut ? "-" : "+"}Rs {Number(transaction.amount || 0).toFixed(2)}
                     </p>
-                    <p className="running-balance">Bal: Rs {transaction.balanceAfterTransaction.toFixed(2)}</p>
+                    <p className="running-balance">Bal: Rs {Number(transaction.balanceAfterTransaction || 0).toFixed(2)}</p>
                   </div>
                 </div>
               );
@@ -1620,6 +1795,28 @@ const Transactions = () => {
           </div>
         )}
       </div>
+
+      {transactionTotalPages > 1 && (
+        <div className="transaction-pagination">
+          <button
+            type="button"
+            onClick={() => setTransactionPage((current) => Math.max(1, current - 1))}
+            disabled={transactionPage <= 1 || transactionsRefreshing}
+          >
+            Previous
+          </button>
+          <span>
+            Page {transactionPage} of {transactionTotalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => setTransactionPage((current) => Math.min(transactionTotalPages, current + 1))}
+            disabled={transactionPage >= transactionTotalPages || transactionsRefreshing}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 };

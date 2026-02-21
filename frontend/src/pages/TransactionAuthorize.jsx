@@ -9,6 +9,17 @@ const MAX_PROCESS_MS = 15000;
 
 const normalizeAccountNumber = (value = "") => String(value || "").trim().replace(/\s+/g, "").toUpperCase();
 const formatRupee = (value) => `Rs ${Number(value || 0).toFixed(2)}`;
+const formatDateTime = (value) => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const readPendingTransferDraft = () => {
@@ -41,6 +52,8 @@ const TransactionAuthorize = () => {
   const [phase, setPhase] = useState("ready");
   const [error, setError] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [transactionBlocked, setTransactionBlocked] = useState(false);
+  const [lockedUntil, setLockedUntil] = useState("");
 
   const processingSecondsLeft = useMemo(
     () => Math.max(0, Math.ceil((MAX_PROCESS_MS - elapsedMs) / 1000)),
@@ -71,6 +84,7 @@ const TransactionAuthorize = () => {
   }, [phase]);
 
   const handleReenterPin = () => {
+    if (transactionBlocked) return;
     setMpin("");
     setError("");
     if (phase !== "success") {
@@ -81,12 +95,17 @@ const TransactionAuthorize = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!draft) return;
+    if (transactionBlocked) {
+      setError("Online transactions are currently blocked. Contact support or ask admin to unblock.");
+      return;
+    }
     if (!/^\d{4}$/.test(mpin)) {
       setError("Enter a valid 4-digit MPIN.");
       return;
     }
 
     setError("");
+    setLockedUntil("");
     setPhase("processing");
     const startTime = Date.now();
 
@@ -113,6 +132,7 @@ const TransactionAuthorize = () => {
         await wait(MIN_PROCESS_MS - elapsed);
       }
 
+      const pendingApproval = Boolean(response?.data?.pendingApproval);
       const payload = {
         amount: draft.amount,
         recipientAccountNumber: draft.recipientAccountNumber,
@@ -120,6 +140,9 @@ const TransactionAuthorize = () => {
         recipientAccountMasked: response?.data?.recipientAccountMasked || draft.recipientAccountMasked || "",
         senderNewBalance: Number(response?.data?.senderNewBalance || 0),
         referenceId: response?.data?.senderTransactionId || "",
+        approvalRequestId: response?.data?.approvalRequestId || "",
+        pendingApproval,
+        statusMessage: response?.data?.message || "",
         processedAt: new Date().toISOString(),
       };
 
@@ -140,6 +163,7 @@ const TransactionAuthorize = () => {
 
       const status = submitError?.response?.status;
       const message = submitError?.response?.data?.message || "";
+      const blockedUntil = submitError?.response?.data?.lockedUntil || "";
       const timeoutHit = submitError?.message === "TRANSFER_TIMEOUT" || submitError?.code === "ECONNABORTED";
 
       if (timeoutHit) {
@@ -148,9 +172,19 @@ const TransactionAuthorize = () => {
         return;
       }
 
+      if (status === 423) {
+        setPhase("ready");
+        setTransactionBlocked(true);
+        setLockedUntil(blockedUntil);
+        setError(message || "Online transactions are blocked for 24 hours due to repeated invalid MPIN attempts.");
+        setMpin("");
+        return;
+      }
+
       setPhase("ready");
+      setTransactionBlocked(false);
       setError(message || "Unable to authorize transfer right now.");
-      if (status === 401 || status === 423) {
+      if (status === 401) {
         setMpin("");
       }
     }
@@ -192,15 +226,20 @@ const TransactionAuthorize = () => {
             placeholder="****"
             maxLength={4}
             inputMode="numeric"
-            disabled={phase === "processing" || phase === "success"}
+            disabled={phase === "processing" || phase === "success" || transactionBlocked}
             required
           />
 
           <div className="mpin-actions">
-            <button type="submit" disabled={phase === "processing" || phase === "success"}>
+            <button type="submit" disabled={phase === "processing" || phase === "success" || transactionBlocked}>
               {phase === "processing" ? "Authorizing..." : "Authorize Transfer"}
             </button>
-            <button type="button" className="mpin-reenter-btn" onClick={handleReenterPin} disabled={phase === "processing"}>
+            <button
+              type="button"
+              className="mpin-reenter-btn"
+              onClick={handleReenterPin}
+              disabled={phase === "processing" || transactionBlocked}
+            >
               Re-enter MPIN
             </button>
             <button
@@ -223,6 +262,18 @@ const TransactionAuthorize = () => {
         ) : null}
 
         {error ? <p className="mpin-error">{error}</p> : null}
+        {transactionBlocked ? (
+          <div className="mpin-lock-help">
+            <p>
+              Transaction access is locked.{" "}
+              {lockedUntil ? <>Try again after {formatDateTime(lockedUntil)} or request unblock support.</> : "Please contact support or admin for unblock."}
+            </p>
+            <div className="mpin-lock-actions">
+              <Link to="/support">Contact Support</Link>
+              <Link to="/transactions">Go to Transactions</Link>
+            </div>
+          </div>
+        ) : null}
 
         <p className="mpin-footnote">
           Security rule: 3 unsuccessful MPIN attempts will block online transactions for 24 hours.

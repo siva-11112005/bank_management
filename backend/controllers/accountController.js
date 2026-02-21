@@ -4,6 +4,7 @@ const AuditLog = require("../models/AuditLog");
 const ApprovalRequest = require("../models/ApprovalRequest");
 const { verifyTransactionPin } = require("../utils/transactionPin");
 const { isApprovalRequired } = require("../utils/adminApprovalPolicy");
+const { postCustomerDepositJournal, postCustomerWithdrawalJournal } = require("../utils/coreBanking/glService");
 
 // Generate unique account number
 const generateAccountNumber = () => {
@@ -114,6 +115,14 @@ exports.deposit = async (req, res) => {
 
     account.balance += amount;
     await account.save();
+    try {
+      await postCustomerDepositJournal({
+        amount: Number(amount || 0),
+        referenceType: "ACCOUNT_ROUTE_DEPOSIT",
+        referenceId: null,
+        metadata: { userId: req.userId, accountId: account._id, accountNumber: account.accountNumber },
+      });
+    } catch (_) {}
 
     res.status(200).json({
       success: true,
@@ -150,6 +159,14 @@ exports.withdraw = async (req, res) => {
 
     account.balance -= amount;
     await account.save();
+    try {
+      await postCustomerWithdrawalJournal({
+        amount: Number(amount || 0),
+        referenceType: "ACCOUNT_ROUTE_WITHDRAW",
+        referenceId: null,
+        metadata: { userId: req.userId, accountId: account._id, accountNumber: account.accountNumber },
+      });
+    } catch (_) {}
 
     res.status(200).json({
       success: true,

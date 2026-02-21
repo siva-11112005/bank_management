@@ -83,6 +83,85 @@
   cursor: not-allowed;
 }
 
+.transaction-filter-panel {
+  border: 1px solid #d2dff1;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.transaction-filter-controls {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.transaction-filter-controls input,
+.transaction-filter-controls select {
+  border: 1px solid #c8d6ea;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.56rem 0.68rem;
+  font-size: 0.8rem;
+}
+
+.transaction-filter-controls button {
+  border: 1px solid #c8d7ec;
+  border-radius: 10px;
+  background: #edf3ff;
+  color: var(--hdfc-blue);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.56rem 0.76rem;
+  cursor: pointer;
+}
+
+.transaction-filter-summary {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #4f6c8d;
+  font-weight: 700;
+}
+
+.transaction-pagination {
+  margin-top: 0.8rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.transaction-pagination button {
+  border: 1px solid #c8d7ec;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--hdfc-blue);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.48rem 0.72rem;
+  cursor: pointer;
+}
+
+.transaction-pagination button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.transaction-pagination span {
+  font-size: 0.8rem;
+  color: #4f6c8d;
+  font-weight: 700;
+}
+
 .btn-transfer {
   display: inline-flex;
   align-items: center;
@@ -409,6 +488,32 @@
   background: #ffffff;
   padding: 0.62rem 0.72rem;
   font-size: 0.82rem;
+}
+
+.standing-start-date-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.standing-date-quick-btn {
+  border: 1px solid #c8d7ec;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--hdfc-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.54rem 0.66rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.standing-date-help-copy {
+  margin-top: 0.45rem;
+  font-size: 0.74rem;
+  color: #4f6c8d;
+  font-weight: 700;
 }
 
 .standing-pin-input-group {
@@ -1290,6 +1395,10 @@ body.transfer-modal-open {
   }
 
   .standing-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .standing-start-date-row {
     grid-template-columns: 1fr;
   }
 

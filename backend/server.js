@@ -9,6 +9,10 @@ const csrf = require("csurf");
 const connectDB = require("./config/db");
 const { bootstrapAdminIdentities } = require("./utils/adminBootstrap");
 const { startStandingInstructionScheduler } = require("./utils/standingInstructionScheduler");
+const { startCoreBankingScheduler } = require("./utils/coreBanking/coreBankingScheduler");
+const { ensureDefaultChartOfAccounts } = require("./utils/coreBanking/glService");
+const { refreshMoneyOutPolicyCache } = require("./utils/moneyOutPolicy");
+const { refreshRegulatoryPolicyCache } = require("./utils/regulatoryPolicy");
 
 // Load environment variables
 dotenv.config();
@@ -30,16 +34,49 @@ app.use(cookieParser());
 app.use(helmet());
 app.use(mongoSanitize());
 
+const parseOriginList = (...values) =>
+  values
+    .flatMap((value) => String(value || "").split(","))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const resolveCookieSameSite = () => {
+  const configured = String(process.env.COOKIE_SAME_SITE || "")
+    .trim()
+    .toLowerCase();
+  if (["strict", "lax", "none"].includes(configured)) {
+    return configured;
+  }
+  return String(process.env.NODE_ENV || "development").toLowerCase() === "production" ? "none" : "strict";
+};
+
+const resolveCookieSecure = (sameSite) => {
+  const configured = String(process.env.COOKIE_SECURE || "")
+    .trim()
+    .toLowerCase();
+  if (["true", "1", "yes", "on"].includes(configured)) return true;
+  if (["false", "0", "no", "off"].includes(configured)) return false;
+  if (sameSite === "none") return true;
+  return String(process.env.NODE_ENV || "development").toLowerCase() === "production";
+};
+
 // CORS configuration
-const allowedOrigins = [process.env.CORS_ORIGIN, "http://localhost:3000", "http://localhost:3001"].filter(Boolean);
+const allowedOrigins = Array.from(
+  new Set([
+    ...parseOriginList(process.env.CORS_ORIGIN, process.env.FRONTEND_URL),
+    "http://localhost:3000",
+    "http://localhost:3001",
+  ])
+);
+const allowAllOrigins = allowedOrigins.includes("*");
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowAllOrigins || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("CORS not allowed"));
+        callback(new Error(`CORS not allowed for origin: ${origin}`));
       }
     },
     credentials: true,
@@ -63,10 +100,13 @@ app.use("/api/support", require("./routes/supportRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/cards", require("./routes/cardRoutes"));
 app.use("/api/kyc", require("./routes/kycRoutes"));
+app.use("/api/core-banking", require("./routes/coreBankingRoutes"));
 
 // CSRF token endpoint (opt-in adoption)
+const csrfCookieSameSite = resolveCookieSameSite();
+const csrfCookieSecure = resolveCookieSecure(csrfCookieSameSite);
 const csrfProtection = csrf({
-  cookie: { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production" },
+  cookie: { httpOnly: true, sameSite: csrfCookieSameSite, secure: csrfCookieSecure },
 });
 app.get("/api/csrf-token", csrfProtection, (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
@@ -107,7 +147,11 @@ const startServer = async () => {
   await connectDB();
   app.locals.dbReady = true;
   await bootstrapAdminIdentities();
+  await ensureDefaultChartOfAccounts();
+  await refreshMoneyOutPolicyCache();
+  await refreshRegulatoryPolicyCache();
   startStandingInstructionScheduler();
+  startCoreBankingScheduler();
 
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
