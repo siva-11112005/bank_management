@@ -4,6 +4,7 @@
   "description": "Bank Management MERN Application Backend",
   "main": "server.js",
   "scripts": {
+    "render-build": "cd ../frontend && npm ci --legacy-peer-deps && npm run build && cd ../backend && npm ci",
     "start": "node server.js",
     "start:worker": "node worker.js",
     "dev": "nodemon server.js",
