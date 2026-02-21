@@ -294,6 +294,29 @@ Quick steps:
 Note:
 - Scheduler jobs are intentionally disabled on API service and enabled on worker service to avoid duplicate execution.
 
+### Render Single Web Service (Backend + Frontend Together)
+If you want only one Render web service:
+
+1. Service type: `Web Service (Node)`
+2. Root Directory: `bank-management-mern`
+3. Build Command:
+   ```bash
+   cd frontend && npm install && npm run build && cd ../backend && npm install
+   ```
+4. Start Command:
+   ```bash
+   cd backend && npm start
+   ```
+5. Required env values:
+   - `MONGO_URI`
+   - `JWT_SECRET`
+   - `NODE_ENV=production`
+   - `FRONTEND_URL=https://<same-service>.onrender.com`
+   - `CORS_ORIGIN=https://<same-service>.onrender.com`
+   - `FRONTEND_BUILD_PATH=../frontend/build`
+
+In this mode backend serves React build from `frontend/build`.
+
 Post-deploy smoke test:
 1. Open backend folder:
    ```bash

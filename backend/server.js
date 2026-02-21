@@ -2,6 +2,8 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const helmet = require("helmet");
+const fs = require("fs");
+const path = require("path");
 const { apiLimiter } = require("./middleware/rateLimiters");
 const cookieParser = require("cookie-parser");
 const mongoSanitize = require("express-mongo-sanitize");
@@ -60,6 +62,18 @@ const resolveCookieSecure = (sameSite) => {
   return String(process.env.NODE_ENV || "development").toLowerCase() === "production";
 };
 
+const resolveFrontendBuildPath = () => {
+  const configuredPath = String(process.env.FRONTEND_BUILD_PATH || "").trim();
+  if (configuredPath) {
+    return path.resolve(process.cwd(), configuredPath);
+  }
+  return path.resolve(__dirname, "..", "frontend", "build");
+};
+
+const frontendBuildPath = resolveFrontendBuildPath();
+const frontendIndexPath = path.join(frontendBuildPath, "index.html");
+const hasFrontendBuild = fs.existsSync(frontendIndexPath);
+
 // CORS configuration
 const allowedOrigins = Array.from(
   new Set([
@@ -112,8 +126,15 @@ app.get("/api/csrf-token", csrfProtection, (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
 
+if (hasFrontendBuild) {
+  app.use(express.static(frontendBuildPath));
+}
+
 // Health and readiness routes
 app.get("/", (req, res) => {
+  if (hasFrontendBuild) {
+    return res.sendFile(frontendIndexPath);
+  }
   res.json({ message: "Bank Management API is running" });
 });
 app.get("/api/health", (req, res) => {
@@ -129,6 +150,10 @@ app.get("/api/ready", (req, res) => {
   }
   return res.status(503).json({ status: "not_ready" });
 });
+
+if (hasFrontendBuild) {
+  app.get(/^\/(?!api(?:\/|$)).*/, (req, res) => res.sendFile(frontendIndexPath));
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
